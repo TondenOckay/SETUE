@@ -1,2 +1,2 @@
-id,pos_x,pos_y,pos_z,pivot_x,pivot_y,pivot_z,fov,near,far,orbit_speed,pan_speed,zoom_speed,snap_deg,front_yaw,front_pitch,right_yaw,right_pitch,top_yaw,top_pitch,min_pitch,max_pitch,invert_x,invert_y
+id,PosX,PosY,PosZ,PivotX,PivotY,PivotZ,Fov,Near,Far,InvertX,InvertY
 main,0,2,10,0,0,0,60,0.1,1000,0.4,0.01,0.5,15,0,0,90,0,0,89,-89,89,true,true

@@ -10,8 +10,7 @@ namespace SETUE.Core
 
     public static class ECS
     {
-        private static Dictionary<Type, Array> _componentArrays = new();
-        private static List<Entity> _entities = new();
+        private static Dictionary<Type, object> _componentStores = new();
         private static int _nextEntityId = 1;
 
         public struct Entity
@@ -20,92 +19,51 @@ namespace SETUE.Core
             public Entity(int id) => Id = id;
         }
 
-        public static Entity CreateEntity()
-        {
-            var e = new Entity(_nextEntityId++);
-            _entities.Add(e);
-            return e;
-        }
+        public static Entity CreateEntity() => new Entity(_nextEntityId++);
 
         public static void AddComponent<T>(Entity e, T component) where T : struct, IComponent
         {
             var type = typeof(T);
-            if (!_componentArrays.TryGetValue(type, out var arr))
+            if (!_componentStores.TryGetValue(type, out var storeObj))
             {
-                arr = new T[256];
-                _componentArrays[type] = arr;
+                storeObj = new Dictionary<Entity, T>();
+                _componentStores[type] = storeObj;
             }
-            var typedArr = (T[])arr;
-            if (e.Id >= typedArr.Length)
-            {
-                Array.Resize(ref typedArr, Math.Max(e.Id + 1, typedArr.Length * 2));
-                _componentArrays[type] = typedArr;
-            }
-            typedArr[e.Id] = component;
+            var store = (Dictionary<Entity, T>)storeObj;
+            store[e] = component;
         }
 
-        public static ref T GetComponent<T>(Entity e) where T : struct, IComponent
+        public static T GetComponent<T>(Entity e) where T : struct, IComponent
         {
-            var type = typeof(T);
-            if (!_componentArrays.TryGetValue(type, out var arr))
-                throw new Exception($"Component {type.Name} not found for entity {e.Id}");
-            var typedArr = (T[])arr;
-            return ref typedArr[e.Id];
+            var store = (Dictionary<Entity, T>)_componentStores[typeof(T)];
+            return store[e];
         }
 
         public static bool HasComponent<T>(Entity e) where T : struct, IComponent
         {
-            var type = typeof(T);
-            if (!_componentArrays.TryGetValue(type, out var arr)) return false;
-            var typedArr = (T[])arr;
-            return e.Id < typedArr.Length && !EqualityComparer<T>.Default.Equals(typedArr[e.Id], default);
+            if (!_componentStores.TryGetValue(typeof(T), out var storeObj)) return false;
+            var store = (Dictionary<Entity, T>)storeObj;
+            return store.ContainsKey(e);
         }
 
         public static IEnumerable<Entity> Query<T>() where T : struct, IComponent
         {
-            var type = typeof(T);
-            if (!_componentArrays.TryGetValue(type, out var arr)) yield break;
-            var typedArr = (T[])arr;
-            for (int i = 0; i < typedArr.Length; i++)
-                if (!EqualityComparer<T>.Default.Equals(typedArr[i], default))
-                    yield return new Entity(i);
+            if (!_componentStores.TryGetValue(typeof(T), out var storeObj)) yield break;
+            var store = (Dictionary<Entity, T>)storeObj;
+            foreach (var kv in store)
+                yield return kv.Key;
         }
 
         public static void RemoveComponent<T>(Entity e) where T : struct, IComponent
         {
-            var type = typeof(T);
-            if (!_componentArrays.TryGetValue(type, out var arr)) return;
-            var typedArr = (T[])arr;
-            if (e.Id < typedArr.Length) typedArr[e.Id] = default;
+            if (_componentStores.TryGetValue(typeof(T), out var storeObj))
+                ((Dictionary<Entity, T>)storeObj).Remove(e);
         }
 
         public static void DestroyEntity(Entity e)
         {
-            _entities.RemoveAll(x => x.Id == e.Id);
-        }
-
-        public static void LoadFromCSV<T>(string path) where T : struct, IComponent
-        {
-            if (!File.Exists(path)) return;
-            var lines = File.ReadAllLines(path);
-            if (lines.Length < 2) return;
-            var header = lines[0].Split(',');
-            for (int i = 1; i < lines.Length; i++)
-            {
-                var parts = lines[i].Split(',');
-                var entity = CreateEntity();
-                var component = Activator.CreateInstance<T>();
-                foreach (var field in typeof(T).GetFields())
-                {
-                    int idx = Array.IndexOf(header, field.Name);
-                    if (idx >= 0 && idx < parts.Length)
-                    {
-                        var val = ConvertValue(parts[idx], field.FieldType);
-                        field.SetValueDirect(__makeref(component), val);
-                    }
-                }
-                AddComponent(entity, component);
-            }
+            foreach (var kv in _componentStores)
+                ((dynamic)kv.Value).Remove(e);
         }
 
         private static object ConvertValue(string str, Type t)
@@ -117,6 +75,36 @@ namespace SETUE.Core
             if (t == typeof(float)) return float.TryParse(str, out var f) ? f : 0f;
             if (t.IsEnum) return Enum.TryParse(t, str, true, out var e) ? e : 0;
             return null;
+        }
+
+        // Load multiple component types from the same CSV file, one entity per row.
+        private static void LoadFromCSV(string path, params Type[] componentTypes)
+        {
+            if (!File.Exists(path)) return;
+            var lines = File.ReadAllLines(path);
+            if (lines.Length < 2) return;
+            var header = lines[0].Split(',');
+            for (int i = 1; i < lines.Length; i++)
+            {
+                var parts = lines[i].Split(',');
+                var entity = CreateEntity();
+                foreach (var compType in componentTypes)
+                {
+                    var component = Activator.CreateInstance(compType);
+                    foreach (var field in compType.GetFields())
+                    {
+                        int idx = Array.IndexOf(header, field.Name);
+                        if (idx >= 0 && idx < parts.Length)
+                        {
+                            var val = ConvertValue(parts[idx], field.FieldType);
+                            field.SetValueDirect(__makeref(component), val);
+                        }
+                    }
+                    // Add component using reflection
+                    var addMethod = typeof(ECS).GetMethod("AddComponent").MakeGenericMethod(compType);
+                    addMethod.Invoke(null, new object[] { entity, component });
+                }
+            }
         }
 
         public static void LoadAll()
@@ -134,6 +122,9 @@ namespace SETUE.Core
             int idxComp = Array.IndexOf(header, "ComponentName");
             int idxPath = Array.IndexOf(header, "CSVPath");
             int idxEnabled = Array.IndexOf(header, "Enabled");
+
+            // Group by CSV path to load all components from the same file onto one entity per row
+            var grouped = new Dictionary<string, List<Type>>();
             for (int i = 1; i < lines.Length; i++)
             {
                 var parts = lines[i].Split(',');
@@ -144,14 +135,16 @@ namespace SETUE.Core
                 var type = Type.GetType($"SETUE.Components.{compName}");
                 if (type != null)
                 {
-                    var method = typeof(ECS).GetMethod("LoadFromCSV").MakeGenericMethod(type);
-                    method.Invoke(null, new object[] { path });
-                    Console.WriteLine($"[ECS] Loaded {compName} from {path}");
+                    if (!grouped.ContainsKey(path))
+                        grouped[path] = new List<Type>();
+                    grouped[path].Add(type);
                 }
-                else
-                {
-                    Console.WriteLine($"[ECS] Component type not found: SETUE.Components.{compName}");
-                }
+            }
+
+            foreach (var kv in grouped)
+            {
+                LoadFromCSV(kv.Key, kv.Value.ToArray());
+                Console.WriteLine($"[ECS] Loaded {string.Join(", ", kv.Value.Select(t => t.Name))} from {kv.Key}");
             }
         }
     }

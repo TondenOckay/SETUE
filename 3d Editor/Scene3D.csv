@@ -1,2 +1,2 @@
 id,enabled,order,data_source,item_filter,mesh_source,transform_source,color_source
-draw_objects,true,0,ecs,visible=true,object_shape,object_mvp,object_color
+draw_objects,true,0,ecs,Layer=3,object_shape,object_mvp,object_color

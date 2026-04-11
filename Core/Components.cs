@@ -40,3 +40,18 @@ namespace SETUE.Components
         public float R, G, B, Alpha;
     }
 }
+
+public struct Scale : IComponent
+{
+    public float Value;
+}
+
+public struct Rotation : IComponent
+{
+    public float X, Y, Z;
+}
+
+public struct Color : IComponent
+{
+    public float R, G, B;
+}
