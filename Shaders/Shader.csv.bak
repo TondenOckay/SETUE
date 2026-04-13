@@ -1,9 +1,0 @@
-id,vert_shader,frag_shader,topology,cull_mode,depth_test,depth_write,depth_compare,stencil_test,depth_bounds,push_constant_size,type,r,g,b,a,density,has_sampler,blend_enable,src_color_blend,dst_color_blend,color_blend_op,src_alpha_blend,dst_alpha_blend,alpha_blend_op
-rect_pipeline,Shaders/mesh.vert.spv,Shaders/mesh.frag.spv,triangle_list,none,false,false,always,false,false,144,2d,1,1,1,1,1,false,false,one,zero,add,one,zero,add
-mesh_pipeline,Shaders/mesh.vert.spv,Shaders/mesh.frag.spv,triangle_list,none,true,true,less,false,false,144,3d,1,1,1,1,1,false,false,one,zero,add,one,zero,add
-custom_pipeline,Shaders/mesh.vert.spv,Shaders/mesh.frag.spv,triangle_list,none,true,true,less,false,false,144,custom,1,1,1,1,1,false,false,one,zero,add,one,zero,add
-mesh_pipeline_back,Shaders/mesh.vert.spv,Shaders/mesh.frag.spv,triangle_list,back,true,true,less,false,false,144,3d,1,1,1,1,1,false,false,one,zero,add,one,zero,add
-mesh_pipeline_front,Shaders/mesh.vert.spv,Shaders/mesh.frag.spv,triangle_list,front,true,true,less,false,false,144,3d,1,1,1,1,1,false,false,one,zero,add,one,zero,add
-grid_pipeline,Shaders/mesh.vert.spv,Shaders/line.frag.spv,line_list,none,true,false,less,false,false,144,3d,1,1,1,1,1,false,false,one,zero,add,one,zero,add
-axis_pipeline,Shaders/mesh.vert.spv,Shaders/mesh.frag.spv,line_list,none,true,true,less,false,false,144,3d,1,1,1,1,1,false,false,one,zero,add,one,zero,add
-text_pipeline,Shaders/text.vert.spv,Shaders/text.frag.spv,triangle_list,none,false,false,always,false,false,144,2d,1,1,1,1,1,true,true,src_alpha,one_minus_src_alpha,add,one,zero,add

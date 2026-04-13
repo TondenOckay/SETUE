@@ -38,27 +38,25 @@ namespace SETUE.Core
             if (_running) return;
             _running = true;
             _stopwatch.Start();
-            _thread = new Thread(Run);
-            _thread.Start();
-            Console.WriteLine("[MasterClock] Started");
+            Console.WriteLine("[MasterClock] Started (Single-Threaded)");
+            Run();
         }
 
         public static void Stop()
         {
             _running = false;
-            _thread?.Join();
             _stopwatch.Stop();
             Console.WriteLine("[MasterClock] Stopped");
         }
 
         public static void WaitForExit()
         {
-            _thread?.Join();
+            // No longer needed for threading, but kept for compatibility
         }
 
         private static void Run()
         {
-            // === BOOT PHASE (runs once on the scheduler thread) ===
+            // === BOOT PHASE ===
             Schedulers.RunBoot();
 
             // === MAIN LOOP ===
@@ -66,10 +64,8 @@ namespace SETUE.Core
             {
                 double tickStart = CurrentTime;
 
-                lock (LockObject)
-                {
-                    Schedulers.Update(CurrentTime);
-                }
+                // Everything happens in sequence on this one thread
+                Schedulers.Update(CurrentTime);
 
                 double elapsed = CurrentTime - tickStart;
                 int sleepMs = (int)((_tickInterval - elapsed) * 1000);

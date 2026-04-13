@@ -1,52 +1,18 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
-using System.Linq;
+using System.Numerics;
+using SETUE.ECS;
 
 namespace SETUE.Systems
 {
-    public class Text
-    {
-        public string Id      { get; set; } = "";
-        public string PanelId { get; set; } = "";
-        public string Content { get; set; } = "";
-        public string FontId  { get; set; } = "default";
-        public float  R       { get; set; } = 1f;
-        public float  G       { get; set; } = 1f;
-        public float  B       { get; set; } = 1f;
-        public string Align    { get; set; } = "center";
-        public float  Rotation { get; set; } = 0f;
-        public int    Layer   { get; set; } = 10;
-        public string Source  { get; set; } = "";
-        public string Prefix  { get; set; } = "";
-    }
-
     public static class Texts
     {
-        private static List<Text> _texts = new();
-        public static IEnumerable<Text> Sorted => _texts.OrderBy(t => t.Layer);
-        public static IReadOnlyDictionary<string, Text> All => _texts.ToDictionary(t => t.Id);
-        public static void Add(Text t)      => _texts.Add(t);
-        public static void Remove(string id)     => _texts.RemoveAll(t => t.Id == id);
-
-        public static void Update()
-        {
-            var sel = SETUE.Objects3D.Objects.SelectedObject;
-            foreach (var t in _texts)
-            {
-                if (string.IsNullOrEmpty(t.Source)) continue;
-                float val2 = sel != null ? sel.GetProperty(t.Source) : 0f;
-                string disp = sel != null ? $"{t.Prefix}  {val2:F3}" : $"{t.Prefix}  ---";
-                t.Content = disp;
-            }
-        }
-
         public static void Load()
         {
             string path = "Ui/Text.csv";
-            _texts.Clear();
             if (!File.Exists(path)) { Console.WriteLine($"[Texts] File not found: {path}"); return; }
-            var lines   = File.ReadAllLines(path);
+            var lines = File.ReadAllLines(path);
             var headers = lines[0].Split(',');
             int iId      = Array.IndexOf(headers, "id");
             int iPanelId = Array.IndexOf(headers, "panel_id");
@@ -54,10 +20,12 @@ namespace SETUE.Systems
             int iFontId  = Array.IndexOf(headers, "font_id");
             int iColorId = Array.IndexOf(headers, "color_id");
             int iAlign   = Array.IndexOf(headers, "align");
-            int iLayer    = Array.IndexOf(headers, "layer");
-            int iRotation = Array.IndexOf(headers, "rotation");
-            int iSource   = Array.IndexOf(headers, "source");
-            int iPrefix   = Array.IndexOf(headers, "prefix");
+            int iLayer   = Array.IndexOf(headers, "layer");
+            int iRotation= Array.IndexOf(headers, "rotation");
+            int iSource  = Array.IndexOf(headers, "source");
+            int iPrefix  = Array.IndexOf(headers, "prefix");
+
+            var world = Object.ECSWorld; // Changed from ObjectLoader
 
             for (int i = 1; i < lines.Length; i++)
             {
@@ -66,24 +34,80 @@ namespace SETUE.Systems
                 var p = line.Split(',');
                 string Get(int idx) => idx >= 0 && idx < p.Length ? p[idx].Trim() : "";
 
-                var label = new Text
-                {
-                    Id      = Get(iId),
-                    PanelId = Get(iPanelId),
-                    Content = Get(iText),
-                    FontId  = string.IsNullOrEmpty(Get(iFontId)) ? "default" : Get(iFontId),
-                    Align   = string.IsNullOrEmpty(Get(iAlign))  ? "center"  : Get(iAlign),
-                    Layer    = int.TryParse(Get(iLayer),    out var l)    ? l    : 10,
-                    Rotation = float.TryParse(Get(iRotation), out var rot) ? rot : 0f,
-                    Source   = Get(iSource),
-                    Prefix   = Get(iPrefix),
-                };
+                string id = Get(iId);
+                string panelId = Get(iPanelId);
+                string content = Get(iText);
+                string fontId = string.IsNullOrEmpty(Get(iFontId)) ? "default" : Get(iFontId);
+                string align = string.IsNullOrEmpty(Get(iAlign)) ? "center" : Get(iAlign);
+                int layer = int.TryParse(Get(iLayer), out var l) ? l : 10;
+                float rotation = float.TryParse(Get(iRotation), out var rot) ? rot : 0f;
+                string source = Get(iSource);
+                string prefix = Get(iPrefix);
+
+                Vector4 color = new Vector4(1,1,1,1);
                 string cid = Get(iColorId);
-                if (!string.IsNullOrEmpty(cid)) { var c = Colors.Get(cid); label.R = c.R; label.G = c.G; label.B = c.B; }
-                _texts.Add(label);
+                if (!string.IsNullOrEmpty(cid))
+                {
+                    var c = Colors.Get(cid);
+                    color = new Vector4(c.R, c.G, c.B, c.Alpha);
+                }
+
+                Entity e = world.CreateEntity();
+                world.AddComponent(e, new TextComponent
+                {
+                    Id = id,
+                    Content = content,
+                    FontId = fontId,
+                    FontSize = 16f,
+                    Color = color,
+                    Align = align,
+                    Rotation = rotation,
+                    Layer = layer,
+                    Source = source,
+                    Prefix = prefix,
+                    PanelId = panelId
+                });
+                world.AddComponent(e, new TransformComponent
+                {
+                    Position = Vector3.Zero,
+                    Scale = Vector3.One,
+                    Rotation = Quaternion.Identity
+                });
             }
-            foreach (var t in _texts) Console.WriteLine($"[Texts] {t.Id} rot={t.Rotation}");
-            Console.WriteLine($"[Texts] Loaded {_texts.Count} text label(s)");
+            Console.WriteLine($"[Texts] Loaded {world.Query<TextComponent>().Count()} text entities");
+        }
+
+        public static void Update()
+        {
+            var world = Object.ECSWorld; // Changed from ObjectLoader
+            Entity? selectedEntity = null;
+            foreach (var e in world.Query<SelectedComponent>())
+            {
+                selectedEntity = e;
+                break;
+            }
+
+            foreach (var e in world.Query<TextComponent>())
+            {
+                var text = world.GetComponent<TextComponent>(e);
+                if (string.IsNullOrEmpty(text.Source)) continue;
+
+                string newContent = text.Content;
+                if (selectedEntity != null)
+                {
+                    newContent = $"{text.Prefix} 0.000";
+                }
+                else
+                {
+                    newContent = $"{text.Prefix} ---";
+                }
+
+                if (newContent != text.Content)
+                {
+                    text.Content = newContent;
+                    world.SetComponent(e, text);
+                }
+            }
         }
     }
 }

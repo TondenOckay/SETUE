@@ -1,10 +1,11 @@
+FILE: /home/syii/Documents/SETUE/Ui/Text.csv
 id,panel_id,text,font_id,color_id,align,layer,rotation,source,prefix
 debug_text,left_panel,"Hello World",default,white,left,15,0,,
 loc_label,item_loc_,"Location:",default,white,left,20,0,,
 rot_label,item_rot_,"Rotation:",default,white,left,20,0,,
 scale_label,item_scale_,"Scale:",default,white,left,20,0,,
-tab_item_text,tab_item,Item,default,white,center,13,90,,
-tab_view_text,tab_view,View,default,white,center,13,90,,
+tab_item_text,tab_item,Item,default,white,center,13,0,,
+tab_view_text,tab_view,View,default,white,center,13,0,,
 menu_file_text,menu_file,File,default,white,center,21,0,,
 menu_edit_text,menu_edit,Edit,default,white,center,21,0,,
 menu_tools_text,menu_tools,Tools,default,white,center,21,0,,
@@ -14,3 +15,6 @@ file_save,menu_file_popup,Save,default,white,left,22,0,,
 edit_undo,menu_edit_popup,Undo,default,white,left,22,0,,
 edit_redo,menu_edit_popup,Redo,default,white,left,22,0,,
 tools_options,menu_tools_popup,Options,default,white,left,22,0,,
+
+---
+

@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using SETUE.Core;
+using SETUE.ECS;
 
 namespace SETUE.Systems
 {
@@ -106,6 +108,29 @@ namespace SETUE.Systems
                 if (!string.IsNullOrEmpty(tcid)) { var c = Colors.Get(tcid); panel.TextR = c.R; panel.TextG = c.G; panel.TextB = c.B; }
 
                 _panels.Add(panel);
+
+                var world = Object.ECSWorld; // Changed from ObjectLoader
+                var e = world.CreateEntity();
+                world.AddComponent(e, new TransformComponent
+                {
+                    Position = new Vector3(panel.X + panel.Width * 0.5f, panel.Y + panel.Height * 0.5f, 0),
+                    Scale = new Vector3(panel.Width, panel.Height, 1),
+                    Rotation = Quaternion.Identity
+                });
+                world.AddComponent(e, new PanelComponent
+                {
+                    Id = panel.Id,
+                    Visible = panel.Visible,
+                    Layer = panel.Layer,
+                    Alpha = panel.Alpha,
+                    Clickable = panel.Clickable,
+                    TextId = panel.Text
+                });
+                world.AddComponent(e, new MaterialComponent
+                {
+                    PipelineId = "rect_pipeline",
+                    Color = new Vector4(panel.R, panel.G, panel.B, panel.Alpha)
+                });
             }
 
             _panelDict = _panels.ToDictionary(p => p.Id);
@@ -114,10 +139,8 @@ namespace SETUE.Systems
 
         public static void UpdateLayout(int windowWidth, int windowHeight)
         {
-            // Static layout – just store the new window dimensions for reference.
             _windowWidth = windowWidth;
             _windowHeight = windowHeight;
-            // No recalc needed – panels stay where they are.
         }
 
         public static void SetPanelProperty(string panelId, string prop, float value)

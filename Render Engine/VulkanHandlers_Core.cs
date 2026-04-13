@@ -281,14 +281,16 @@ namespace SETUE
             foreach (var iv in Vulkan.SwapImageViews)
                 Vulkan.VK.DestroyImageView(Vulkan.Device, iv, null);
 
-            if (Vulkan.DepthImageView.Handle != 0)
+            if (Vulkan.DepthImages != null && Vulkan.DepthImages.Length > 0 && Vulkan.DepthImages[0].Handle != 0)
             {
-                Vulkan.VK.DestroyImageView(Vulkan.Device, Vulkan.DepthImageView, null);
-                Vulkan.VK.DestroyImage(Vulkan.Device, Vulkan.DepthImage, null);
-                Vulkan.VK.FreeMemory(Vulkan.Device, Vulkan.DepthMemory, null);
+                for (int i = 0; i < Vulkan.DepthImages.Length; i++)
+                {
+                    Vulkan.VK.DestroyImageView(Vulkan.Device, Vulkan.DepthImageViews[i], null);
+                    Vulkan.VK.DestroyImage(Vulkan.Device, Vulkan.DepthImages[i], null);
+                    Vulkan.VK.FreeMemory(Vulkan.Device, Vulkan.DepthMemories[i], null);
+                }
             }
 
-            // Also free old command buffers before destroying pool
             if (Vulkan.CommandBuffers != null)
                 Vulkan.VK.FreeCommandBuffers(Vulkan.Device, Vulkan.CommandPool, (uint)Vulkan.CommandBuffers.Length, Vulkan.CommandBuffers.AsSpan()[0]);
 
@@ -302,7 +304,6 @@ namespace SETUE
 
             CreateSwapchain(row);
             CreateFramebuffers(Vulkan.Rows["renderpass"]);
-            // Recreate command buffers for new framebuffer count
             RecreateCommandBuffers();
 
             Console.WriteLine("[Vulkan] Swapchain recreated successfully.");
@@ -442,16 +443,22 @@ namespace SETUE
 
             if (hasDepth)
             {
-                Vulkan.CreateImage(
-                    Vulkan.SwapExtent.Width, Vulkan.SwapExtent.Height,
-                    depthFmt, ImageTiling.Optimal,
-                    ImageUsageFlags.DepthStencilAttachmentBit,
-                    MemoryPropertyFlags.DeviceLocalBit,
-                    out var di, out var dm);
-                Vulkan.DepthImage     = di;
-                Vulkan.DepthMemory    = dm;
-                Vulkan.DepthImageView = Vulkan.CreateImageView(di, depthFmt, ImageAspectFlags.DepthBit);
-                Console.WriteLine("[Vulkan] Depth image OK");
+                int count = Vulkan.SwapImages.Length;
+                Vulkan.DepthImages     = new VkImage[count];
+                Vulkan.DepthMemories    = new DeviceMemory[count];
+                Vulkan.DepthImageViews = new ImageView[count];
+
+                for (int i = 0; i < count; i++)
+                {
+                    Vulkan.CreateImage(
+                        Vulkan.SwapExtent.Width, Vulkan.SwapExtent.Height,
+                        depthFmt, ImageTiling.Optimal,
+                        ImageUsageFlags.DepthStencilAttachmentBit,
+                        MemoryPropertyFlags.DeviceLocalBit,
+                        out Vulkan.DepthImages[i], out Vulkan.DepthMemories[i]);
+                    Vulkan.DepthImageViews[i] = Vulkan.CreateImageView(Vulkan.DepthImages[i], depthFmt, ImageAspectFlags.DepthBit);
+                }
+                Console.WriteLine($"[Vulkan] Depth images OK (count={count})");
             }
 
             var views = new ImageView[Vulkan.SwapImages.Length];
@@ -464,7 +471,7 @@ namespace SETUE
             {
                 var atts = stackalloc ImageView[2];
                 atts[0]  = views[i];
-                atts[1]  = Vulkan.DepthImageView;
+                atts[1]  = hasDepth ? Vulkan.DepthImageViews[i] : default;
 
                 var fbInfo = new FramebufferCreateInfo
                 {
@@ -519,7 +526,6 @@ namespace SETUE
             Vulkan.MaxFrames = s.MaxFramesInFlight > 0 ? s.MaxFramesInFlight : 2;
             Console.WriteLine($"[Vulkan] MaxFrames set to {Vulkan.MaxFrames}");
 
-            // Create command pool with TRANSIENT flag and RESET_COMMAND_BUFFER
             var poolInfo = new CommandPoolCreateInfo
             {
                 SType            = StructureType.CommandPoolCreateInfo,
@@ -550,19 +556,11 @@ namespace SETUE
             Vulkan.RenderFinished = renderFin;
             Vulkan.InFlight       = fences;
 
-            SETUE.RenderEngine.Shaders.Load();
-            SETUE.RenderEngine.Shaders.Init(Vulkan.VK, Vulkan.Device, Vulkan.RenderPass, Vulkan.SwapExtent);
-            SETUE.RenderEngine.MeshBuffer.Init(Vulkan.VK, Vulkan.Device, Vulkan.PhysicalDevice);
-            SETUE.Objects3D.Objects.Load();
-            Draw.Load();
-            Render.Init();
-
             Console.WriteLine("[Vulkan] RenderLoop OK");
         }
 
         static unsafe void RecreateCommandBuffers()
         {
-            // Free old command buffers if any
             if (Vulkan.CommandBuffers != null)
             {
                 Vulkan.VK.FreeCommandBuffers(Vulkan.Device, Vulkan.CommandPool, (uint)Vulkan.CommandBuffers.Length, Vulkan.CommandBuffers[0]);

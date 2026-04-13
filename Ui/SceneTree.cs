@@ -1,135 +1,161 @@
 using System;
-using System.IO;
 using System.Collections.Generic;
-using SETUE.Objects3D;
-using SETUE.Systems;
+using System.IO;
+using System.Numerics;
+using SETUE.ECS;
 
 namespace SETUE.UI
 {
     public static class SceneTree
     {
-        static string _panelId;
-        static float  _rowHeight;
-        static float  _paddingX;
-        static float  _paddingY;
-        static float  _rowR;
-        static float  _rowG;
-        static float  _rowB;
-        static float  _selR;
-        static float  _selG;
-        static float  _selB;
-        static string _fontId;
-        static float  _textR;
-        static float  _textG;
-        static float  _textB;
-        static float  _indentWidth;
+        private static string _panelId = "";
+        private static float _rowHeight = 20f;
+        private static float _paddingX = 10f;
+        private static float _paddingY = 10f;
+        private static float _rowR = 0.2f, _rowG = 0.2f, _rowB = 0.2f;
+        private static float _selR = 0.3f, _selG = 0.6f, _selB = 0.9f;
+        private static string _fontId = "default";
+        private static float _textR = 1f, _textG = 1f, _textB = 1f;
+        private static float _indentWidth = 20f;
 
         public static void Load()
         {
             string csvPath = "Ui/SceneTree.csv";
             if (!File.Exists(csvPath)) { Console.WriteLine($"[SceneTree] Missing {csvPath}"); return; }
-            var lines   = File.ReadAllLines(csvPath);
+            var lines = File.ReadAllLines(csvPath);
             if (lines.Length < 2) return;
             var headers = lines[0].Split(',');
-            var vals    = lines[1].Split(',');
+            var vals = lines[1].Split(',');
             var settings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < headers.Length && i < vals.Length; i++)
                 settings[headers[i].Trim()] = vals[i].Trim();
 
-            if (settings.TryGetValue("panel_id",    out var pid)) _panelId   = pid;
-            if (settings.TryGetValue("row_height",  out var rh))  _rowHeight = float.Parse(rh);
-            if (settings.TryGetValue("padding_x",   out var px))  _paddingX  = float.Parse(px);
-            if (settings.TryGetValue("padding_y",   out var py))  _paddingY  = float.Parse(py);
-            if (settings.TryGetValue("row_r",       out var rr))  _rowR      = float.Parse(rr);
-            if (settings.TryGetValue("row_g",       out var rg))  _rowG      = float.Parse(rg);
-            if (settings.TryGetValue("row_b",       out var rb))  _rowB      = float.Parse(rb);
-            if (settings.TryGetValue("selected_r",  out var sr))  _selR      = float.Parse(sr);
-            if (settings.TryGetValue("selected_g",  out var sg))  _selG      = float.Parse(sg);
-            if (settings.TryGetValue("selected_b",  out var sb))  _selB      = float.Parse(sb);
-            if (settings.TryGetValue("font_id",      out var fi))  _fontId    = fi;
-            if (settings.TryGetValue("text_r",       out var txr)) _textR     = float.Parse(txr);
-            if (settings.TryGetValue("text_g",       out var txg)) _textG     = float.Parse(txg);
-            if (settings.TryGetValue("text_b",       out var txb)) _textB     = float.Parse(txb);
-            if (settings.TryGetValue("indent_width",  out var iw))  _indentWidth = float.Parse(iw);
+            if (settings.TryGetValue("panel_id", out var pid)) _panelId = pid;
+            if (settings.TryGetValue("row_height", out var rh)) _rowHeight = float.Parse(rh);
+            if (settings.TryGetValue("padding_x", out var px)) _paddingX = float.Parse(px);
+            if (settings.TryGetValue("padding_y", out var py)) _paddingY = float.Parse(py);
+            if (settings.TryGetValue("row_r", out var rr)) _rowR = float.Parse(rr);
+            if (settings.TryGetValue("row_g", out var rg)) _rowG = float.Parse(rg);
+            if (settings.TryGetValue("row_b", out var rb)) _rowB = float.Parse(rb);
+            if (settings.TryGetValue("selected_r", out var sr)) _selR = float.Parse(sr);
+            if (settings.TryGetValue("selected_g", out var sg)) _selG = float.Parse(sg);
+            if (settings.TryGetValue("selected_b", out var sb)) _selB = float.Parse(sb);
+            if (settings.TryGetValue("font_id", out var fi)) _fontId = fi;
+            if (settings.TryGetValue("text_r", out var txr)) _textR = float.Parse(txr);
+            if (settings.TryGetValue("text_g", out var txg)) _textG = float.Parse(txg);
+            if (settings.TryGetValue("text_b", out var txb)) _textB = float.Parse(txb);
+            if (settings.TryGetValue("indent_width", out var iw)) _indentWidth = float.Parse(iw);
             Console.WriteLine($"[SceneTree] Loaded settings panel={_panelId} rowH={_rowHeight}");
-        }
-
-        static int GetDepth(string id, int safety = 0)
-        {
-            if (safety > 32) return 0;
-            if (!Objects.All.TryGetValue(id, out var obj)) return 0;
-            if (string.IsNullOrEmpty(obj.Parent)) return 0;
-            return 1 + GetDepth(obj.Parent, safety + 1);
         }
 
         public static void Update()
         {
             if (string.IsNullOrEmpty(_panelId)) return;
-            if (!Panels.All.TryGetValue(_panelId, out var parent)) return;
 
-            var selected = Objects.SelectedObject;
-            float y = parent.Y + _paddingY;
+            var world = Object.ECSWorld; // Changed from ObjectLoader
 
-            // Remove old scene tree panels
-            var toRemove = new List<string>();
-            foreach (var key in Panels.All.Keys)
-                if (key.StartsWith("_st_")) toRemove.Add(key);
-            foreach (var key in toRemove)
-                Panels.Remove(key);
-            var toRemoveTxt = new List<string>();
-            foreach (var key in Texts.All.Keys)
-                if (key.StartsWith("_st_txt_")) toRemoveTxt.Add(key);
-            foreach (var key in toRemoveTxt)
-                Texts.Remove(key);
-
-            foreach (var obj in Objects.All.Values)
+            Entity? containerEntity = null;
+            TransformComponent containerTransform = default;
+            foreach (var (e, panel, transform) in world.Query<PanelComponent, TransformComponent>())
             {
-                int   depth  = GetDepth(obj.Id);
+                if (panel.Id == _panelId)
+                {
+                    containerEntity = e;
+                    containerTransform = transform;
+                    break;
+                }
+            }
+            if (containerEntity == null)
+            {
+                Console.WriteLine($"[SceneTree] Container panel '{_panelId}' not found in ECS");
+                return;
+            }
+
+            float containerX = containerTransform.Position.X - containerTransform.Scale.X * 0.5f;
+            float containerY = containerTransform.Position.Y - containerTransform.Scale.Y * 0.5f;
+            float containerWidth = containerTransform.Scale.X;
+            float containerHeight = containerTransform.Scale.Y;
+
+            var entities = new List<Entity>();
+            foreach (var (e, _, _) in world.Query<TransformComponent, MeshComponent>())
+                entities.Add(e);
+
+            var toRemovePanels = new List<Entity>();
+            var toRemoveTexts = new List<Entity>();
+            foreach (var e in world.Query<PanelComponent>())
+            {
+                var p = world.GetComponent<PanelComponent>(e);
+                if (p.Id.StartsWith("_st_"))
+                    toRemovePanels.Add(e);
+            }
+            foreach (var e in world.Query<TextComponent>())
+            {
+                var t = world.GetComponent<TextComponent>(e);
+                if (t.Id.StartsWith("_st_txt_"))
+                    toRemoveTexts.Add(e);
+            }
+            foreach (var e in toRemovePanels) world.DestroyEntity(e);
+            foreach (var e in toRemoveTexts) world.DestroyEntity(e);
+
+            float y = containerY + _paddingY;
+            foreach (var entity in entities)
+            {
+                var transform = world.GetComponent<TransformComponent>(entity);
+                string entityName = entity.ToString();
+
+                int depth = 0;
                 float indent = _paddingX + depth * _indentWidth;
-                bool  isSel  = selected != null && selected.Id == obj.Id;
+                bool isSelected = world.HasComponent<SelectedComponent>(entity);
 
-                string rowId = "_st_" + obj.Id;
-                string txtId = "_st_txt_" + obj.Id;
+                string rowId = "_st_" + entity.Id;
+                string txtId = "_st_txt_" + entity.Id;
 
-                // Only add if not already present (safety check)
-                if (!Panels.All.ContainsKey(rowId))
+                Entity rowEntity = world.CreateEntity();
+                world.AddComponent(rowEntity, new TransformComponent
                 {
-                    var row = new Panel
-                    {
-                        Id      = rowId,
-                        X       = parent.X + indent,
-                        Y       = y,
-                        Width   = parent.Width - indent - _paddingX,
-                        Height  = _rowHeight - 2f,
-                        R       = isSel ? Colors.Get("row_selected").R : _rowR,
-                        G       = isSel ? Colors.Get("row_selected").G : _rowG,
-                        B       = isSel ? Colors.Get("row_selected").B : _rowB,
-                        Alpha   = isSel ? Colors.Get("row_selected").Alpha : Colors.Get("transparent").Alpha,
-                        Visible = true,
-                        Layer   = parent.Layer + 1,
-                    };
-                    Panels.Add(row);
-                }
-
-                if (!Texts.All.ContainsKey(txtId))
+                    Position = new Vector3(containerX + indent + (containerWidth - indent - _paddingX) * 0.5f, y + _rowHeight * 0.5f, 0),
+                    Scale = new Vector3(containerWidth - indent - _paddingX, _rowHeight - 2f, 1),
+                    Rotation = Quaternion.Identity
+                });
+                world.AddComponent(rowEntity, new PanelComponent
                 {
-                    var label = new Text
-                    {
-                        Id      = txtId,
-                        PanelId = rowId,
-                        Content = obj.Id,
-                        FontId  = string.IsNullOrEmpty(_fontId) ? "default" : _fontId,
-                        R       = _textR,
-                        G       = _textG,
-                        B       = _textB,
-                        Align   = "left",
-                        Layer   = parent.Layer + 1,
-                    };
-                    Texts.Add(label);
-                }
+                    Id = rowId,
+                    Visible = true,
+                    Layer = 1,
+                    Alpha = 1f,
+                    Clickable = true,
+                    TextId = txtId
+                });
+                world.AddComponent(rowEntity, new MaterialComponent
+                {
+                    PipelineId = "rect_pipeline",
+                    Color = isSelected ? new Vector4(_selR, _selG, _selB, 1f) : new Vector4(_rowR, _rowG, _rowB, 1f)
+                });
+
+                Entity textEntity = world.CreateEntity();
+                world.AddComponent(textEntity, new TransformComponent
+                {
+                    Position = new Vector3(containerX + indent + 4f, y + _rowHeight * 0.5f, 0),
+                    Scale = new Vector3(1, 1, 1),
+                    Rotation = Quaternion.Identity
+                });
+                world.AddComponent(textEntity, new TextComponent
+                {
+                    Id = txtId,
+                    Content = entityName,
+                    FontId = _fontId,
+                    FontSize = _rowHeight * 0.6f,
+                    Color = new Vector4(_textR, _textG, _textB, 1f),
+                    Align = "left",
+                    Rotation = 0,
+                    PanelId = rowId
+                });
 
                 y += _rowHeight;
+                if (y + _rowHeight > containerY + containerHeight) break;
             }
+
+            Console.WriteLine($"[SceneTree] Updated with {entities.Count} entities");
         }
     }
 }

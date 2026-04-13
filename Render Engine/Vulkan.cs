@@ -39,9 +39,9 @@ namespace SETUE
         public static Extent2D      SwapExtent     { get; internal set; }
         public static ImageView[]   SwapImageViews { get; internal set; } = null!;
         public static Framebuffer[] Framebuffers   { get; internal set; } = null!;
-        public static VkImage       DepthImage     { get; internal set; }
-        public static DeviceMemory  DepthMemory    { get; internal set; }
-        public static ImageView     DepthImageView { get; internal set; }
+        public static VkImage[]     DepthImages     { get; internal set; } = null!;
+        public static DeviceMemory[] DepthMemories    { get; internal set; } = null!;
+        public static ImageView[]    DepthImageViews { get; internal set; } = null!;
 
         public static RenderPass RenderPass { get; internal set; }
 
@@ -250,7 +250,6 @@ namespace SETUE
             LastImageIndex = imageIndex;
             var cmd = CommandBuffers[imageIndex];
 
-            // Reset and begin with explicit error checking
             var resetResult = VK.ResetCommandBuffer(cmd, 0);
             if (resetResult != Result.Success)
             {
@@ -321,7 +320,7 @@ namespace SETUE
             KhrSwapchain.QueuePresent(GraphicsQueue, &present);
             CurrentFrame = (CurrentFrame + 1) % MaxFrames;
         }
-        // Scheduler-friendly parameterless surface creation
+
         public static void CreateSurface()
         {
             CreateSurfaceFromSDL(SETUE.Window.GetHandle());

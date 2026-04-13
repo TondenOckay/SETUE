@@ -1,2 +1,0 @@
-window_width,window_height,window_title,vsync,graphics_api,renderer,load_panels,load_objects,load_draw
-1280,720,Data Driven Engine,true,Vulkan,Backend,true,true,true

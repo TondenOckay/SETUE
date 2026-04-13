@@ -41,21 +41,28 @@ namespace SETUE.RenderEngine
         private static string _csvPath = "Shaders/Shader.csv";
 
         private static Dictionary<string, Shader> _pipelines = new();
-        public  static IReadOnlyDictionary<string, Shader> All => _pipelines;
+        private static Dictionary<string, Silk.NET.Vulkan.Pipeline> _pipelineHandles = new();
+        private static Dictionary<string, PipelineLayout> _pipelineLayouts = new();
 
         public static Silk.NET.Vulkan.Pipeline GetHandle(string id) =>
-            _pipelines.TryGetValue(id, out var e) ? e.Handle : default;
+            _pipelineHandles.TryGetValue(id, out var h) ? h : default;
 
         public static PipelineLayout GetLayout(string id) =>
-            _pipelines.TryGetValue(id, out var e) ? e.Layout : default;
+            _pipelineLayouts.TryGetValue(id, out var l) ? l : default;
+
         public static DescriptorSetLayout GetSamplerLayout(string id) =>
             _pipelines.TryGetValue(id, out var e) ? e.SamplerLayout : default;
+
+        public static IReadOnlyDictionary<string, Shader> All => _pipelines;
 
         public static void Load()
         {
             if (!File.Exists(_csvPath)) { Console.WriteLine($"[Shaders] Missing {_csvPath}"); return; }
 
             _pipelines.Clear();
+            _pipelineHandles.Clear();
+            _pipelineLayouts.Clear();
+
             var lines   = File.ReadAllLines(_csvPath);
             var headers = lines[0].Split(',');
 
@@ -115,12 +122,22 @@ namespace SETUE.RenderEngine
             }
         }
 
+        public static void BootInit()
+        {
+            Init(Vulkan.VK, Vulkan.Device, Vulkan.RenderPass, Vulkan.SwapExtent);
+        }
+
         public static void Init(Vk vk, Device device, RenderPass renderPass, Extent2D extent)
         {
             _vk     = vk;
             _device = device;
             foreach (var entry in _pipelines.Values)
+            {
                 BuildPipeline(entry, renderPass, extent);
+                _pipelineHandles[entry.Id] = entry.Handle;
+                _pipelineLayouts[entry.Id] = entry.Layout;
+                Console.WriteLine($"[Shaders] Stored pipeline {entry.Id} handle={entry.Handle.Handle}");
+            }
             Console.WriteLine($"[Shaders] Built {_pipelines.Count} pipeline(s)");
         }
 
@@ -172,7 +189,6 @@ namespace SETUE.RenderEngine
             };
             var stages = new[] { vertStage, fragStage };
 
-            // CORRECTED VERTEX LAYOUT: 8 floats per vertex (position, normal, uv)
             var bindingDesc = new VertexInputBindingDescription
             {
                 Binding = 0,

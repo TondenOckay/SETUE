@@ -18,7 +18,13 @@ namespace SETUE
     {
         public static readonly List<RenderPhase> Phases = new();
 
-        public static void Load(string path = "Shaders/RenderPhases.csv")
+        // Only public method – parameterless for scheduler
+        public static void Load()
+        {
+            LoadInternal("Shaders/RenderPhases.csv");
+        }
+
+        private static void LoadInternal(string path)
         {
             Console.WriteLine($"[RenderPhases] Loading from '{path}' (full path: {Path.GetFullPath(path)})");
             Phases.Clear();

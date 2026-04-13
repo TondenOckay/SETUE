@@ -1,6 +1,5 @@
-ComponentName,CSVPath,Enabled
-Position,3d Editor/Object.csv,true
-Mesh,3d Editor/Object.csv,true
-Camera,3d Editor/Camera.csv,true
-Panel,Ui/Panel.csv,true
-Text,Ui/Text.csv,true
+SystemName,Component1,Component2,Component3,Enabled,Order,DeltaTimeParam
+TransformSystem,TransformComponent,,
+MeshSystem,TransformComponent,MeshComponent,
+CameraSystem,CameraComponent,,
+DrawSystem,MVPComponent,MeshComponent,MaterialComponent,true,10,false

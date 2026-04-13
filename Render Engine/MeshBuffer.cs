@@ -12,14 +12,31 @@ public unsafe static class MeshBuffer
     private static Vk _vk = null!;
     private static Device _device;
     private static PhysicalDevice _physDevice;
-    private static readonly Dictionary<string, (VkBuffer vbuf, DeviceMemory vmem, VkBuffer ibuf, DeviceMemory imem, uint indexCount)> _meshes = new();
 
-    public static void Init(Vk vk, Device device, PhysicalDevice physDevice)
+    // Store full mesh data
+    public struct MeshData
     {
-        _vk = vk;
-        _device = device;
-        _physDevice = physDevice;
+        public VkBuffer VertexBuffer;
+        public DeviceMemory VertexMemory;
+        public VkBuffer IndexBuffer;
+        public DeviceMemory IndexMemory;
+        public uint VertexCount;
+        public uint IndexCount;
+        public uint VertexStride; // in bytes
+    }
 
+    private static readonly Dictionary<string, MeshData> _meshes = new();
+
+    public static void Init()
+    {
+        _vk = Vulkan.VK;
+        _device = Vulkan.Device;
+        _physDevice = Vulkan.PhysicalDevice;
+        LoadMeshes();
+    }
+
+    private static void LoadMeshes()
+    {
         string path = "Render Engine/MeshBuffer.csv";
         if (!File.Exists(path))
         {
@@ -27,13 +44,13 @@ public unsafe static class MeshBuffer
             return;
         }
 
-        var lines = File.ReadAllLines(path).Skip(1).Where(l => !string.IsNullOrWhiteSpace(l));
+        var lines = File.ReadAllLines(path).Skip(1).Where(l => !string.IsNullOrWhiteSpace(l) && !l.Trim().StartsWith('#'));
         var meshData = new Dictionary<string, (List<float> verts, List<uint> indices)>();
 
         foreach (var line in lines)
         {
             var p = line.Split(',');
-            if (p.Length < 10) continue;
+            if (p.Length < 3) continue;
             string type   = p[0].Trim();
             string meshId = p[1].Trim();
 
@@ -45,34 +62,27 @@ public unsafe static class MeshBuffer
             switch (type)
             {
                 case "primitive":
-                    string shape = meshId;
-                    float p1 = ParseFloat(p[2]); float p2 = ParseFloat(p[3]); float p3 = ParseFloat(p[4]);
-                    float p4 = ParseFloat(p[5]); float p5 = ParseFloat(p[6]); float p6 = ParseFloat(p[7]);
-                    GeneratePrimitive(shape, p1, p2, p3, p4, p5, p6, verts, indices);
+                    float a = ParseFloat(p[2]); float b = ParseFloat(p[3]); float c = ParseFloat(p[4]);
+                    float d = ParseFloat(p[5]); float e = ParseFloat(p[6]); float f = ParseFloat(p[7]);
+                    GeneratePrimitive(meshId, a, b, c, d, e, f, verts, indices);
                     break;
                 case "vertex":
-                    for (int i = 2; i <= 9; i++) verts.Add(ParseFloat(p[i]));
+                    for (int i = 2; i < p.Length && i < 10; i++)
+                        verts.Add(ParseFloat(p[i]));
                     break;
                 case "index":
-                    indices.Add((uint)ParseFloat(p[2]));
-                    break;
-                case "import":
-                    string filePath = p[2].Trim();
-                    Console.WriteLine($"[MeshBuffer] Import '{filePath}' not yet implemented; skipping.");
+                    for (int i = 2; i < p.Length; i++)
+                        if (!string.IsNullOrWhiteSpace(p[i]))
+                            indices.Add(uint.Parse(p[i].Trim()));
                     break;
             }
         }
 
-        // Upload each mesh
         foreach (var kv in meshData)
         {
             string id = kv.Key;
             var (verts, indices) = kv.Value;
-            if (verts.Count == 0 || indices.Count == 0)
-            {
-                Console.WriteLine($"[MeshBuffer] Mesh '{id}' has no vertices or indices; skipping.");
-                continue;
-            }
+            if (verts.Count == 0 || indices.Count == 0) continue;
             Upload(id, verts.ToArray(), indices.ToArray());
             Console.WriteLine($"[MeshBuffer] Loaded '{id}' with {verts.Count/8} vertices, {indices.Count} indices");
         }
@@ -175,6 +185,9 @@ public unsafe static class MeshBuffer
 
     private static void Upload(string id, float[] vertices, uint[] indices)
     {
+        uint vertexCount = (uint)(vertices.Length / 8); // 8 floats per vertex (pos3, norm3, uv2)
+        uint vertexStride = 8 * sizeof(float); // 32 bytes
+
         ulong vSize = (ulong)(vertices.Length * sizeof(float));
         ulong iSize = (ulong)(indices.Length * sizeof(uint));
 
@@ -185,51 +198,62 @@ public unsafe static class MeshBuffer
             MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
             out VkBuffer ibuf, out DeviceMemory imem);
 
-        unsafe
+        void* mapped;
+        _vk.MapMemory(_device, vmem, 0, vSize, 0, &mapped);
+        fixed (float* src = vertices) System.Buffer.MemoryCopy(src, mapped, (long)vSize, (long)vSize);
+        _vk.UnmapMemory(_device, vmem);
+
+        _vk.MapMemory(_device, imem, 0, iSize, 0, &mapped);
+        fixed (uint* src = indices) System.Buffer.MemoryCopy(src, mapped, (long)iSize, (long)iSize);
+        _vk.UnmapMemory(_device, imem);
+
+        _meshes[id] = new MeshData
         {
-            void* mapped;
-            _vk.MapMemory(_device, vmem, 0, vSize, 0, &mapped);
-            fixed (float* src = vertices) System.Buffer.MemoryCopy(src, mapped, (long)vSize, (long)vSize);
-            _vk.UnmapMemory(_device, vmem);
-
-            _vk.MapMemory(_device, imem, 0, iSize, 0, &mapped);
-            fixed (uint* src = indices) System.Buffer.MemoryCopy(src, mapped, (long)iSize, (long)iSize);
-            _vk.UnmapMemory(_device, imem);
-        }
-
-        _meshes[id] = (vbuf, vmem, ibuf, imem, (uint)indices.Length);
+            VertexBuffer = vbuf,
+            VertexMemory = vmem,
+            IndexBuffer = ibuf,
+            IndexMemory = imem,
+            VertexCount = vertexCount,
+            IndexCount = (uint)indices.Length,
+            VertexStride = vertexStride
+        };
     }
 
-    public static bool Get(string shape, out VkBuffer vbuf, out VkBuffer ibuf, out uint indexCount)
+    // New method returning full MeshData
+    public static bool GetMeshData(string shape, out MeshData data)
     {
         string key = shape.ToLower();
-        Console.WriteLine($"[MeshBuffer] Get('{key}')");
-        if (_meshes.TryGetValue(key, out var m))
-        {
-            vbuf = m.vbuf; ibuf = m.ibuf; indexCount = m.indexCount;
-            Console.WriteLine($"[MeshBuffer]   -> found, indexCount={indexCount}");
+        if (_meshes.TryGetValue(key, out data))
             return true;
-        }
-        Console.WriteLine($"[MeshBuffer]   -> NOT FOUND, falling back to 'cube'");
-        if (_meshes.TryGetValue("cube", out m))
+        Console.WriteLine($"[MeshBuffer] Mesh '{key}' not found, falling back to 'cube'");
+        if (_meshes.TryGetValue("cube", out data))
+            return true;
+        data = default;
+        return false;
+    }
+
+    // Legacy Get for compatibility (if any code still uses it)
+    public static bool Get(string shape, out VkBuffer vbuf, out VkBuffer ibuf, out uint indexCount)
+    {
+        if (GetMeshData(shape, out var data))
         {
-            vbuf = m.vbuf; ibuf = m.ibuf; indexCount = m.indexCount;
+            vbuf = data.VertexBuffer;
+            ibuf = data.IndexBuffer;
+            indexCount = data.IndexCount;
             return true;
         }
         vbuf = default; ibuf = default; indexCount = 0;
         return false;
     }
 
-    public static bool Exists(string shape) => _meshes.ContainsKey(shape.ToLower());
-
     public static void Destroy()
     {
         foreach (var m in _meshes.Values)
         {
-            _vk.DestroyBuffer(_device, m.vbuf, null);
-            _vk.FreeMemory(_device, m.vmem, null);
-            _vk.DestroyBuffer(_device, m.ibuf, null);
-            _vk.FreeMemory(_device, m.imem, null);
+            _vk.DestroyBuffer(_device, m.VertexBuffer, null);
+            _vk.FreeMemory(_device, m.VertexMemory, null);
+            _vk.DestroyBuffer(_device, m.IndexBuffer, null);
+            _vk.FreeMemory(_device, m.IndexMemory, null);
         }
     }
 }

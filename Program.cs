@@ -9,10 +9,9 @@ namespace SETUE
             Console.WriteLine("=== Engine Starting ===");
             
             MasterClock.Load();
-            MasterClock.Start();
             
-            // Wait for the scheduler thread to exit (e.g., when the window closes)
-            MasterClock.WaitForExit();
+            // This is now blocking and will run the entire engine on this thread
+            MasterClock.Start();
             
             Console.WriteLine("=== Engine Shutdown ===");
         }

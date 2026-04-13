@@ -118,7 +118,7 @@ namespace SETUE.UI
 
         public static void Load()
         {
-            string csvPath = "Ui/font.csv";
+            string csvPath = "Ui/Font.csv";
             if (!File.Exists(csvPath)) { Console.WriteLine($"[Fonts] Missing {csvPath}"); return; }
             var lines   = File.ReadAllLines(csvPath);
             var headers = lines[0].Split(',');
