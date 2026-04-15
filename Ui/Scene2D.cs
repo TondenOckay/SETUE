@@ -5,7 +5,7 @@ using System.Numerics;
 using Silk.NET.Vulkan;
 using SETUE.ECS;
 using SETUE.RenderEngine;
-using SETUE.Systems;          // Added for Panels
+using SETUE.Systems;
 using static SETUE.Vulkan;
 using VkBuffer = Silk.NET.Vulkan.Buffer;
 
@@ -107,18 +107,21 @@ namespace SETUE.Scene
                             if (!panel.Visible) continue;
                             var material = world.GetComponent<MaterialComponent>(e);
 
-                            float left = transform.Position.X - transform.Scale.X * 0.5f;
-                            float top = transform.Position.Y - transform.Scale.Y * 0.5f;
-                            float width = transform.Scale.X;
+                            float left   = transform.Position.X - transform.Scale.X * 0.5f;
+                            float top    = transform.Position.Y - transform.Scale.Y * 0.5f;
+                            float width  = transform.Scale.X;
                             float height = transform.Scale.Y;
 
+                            // Original NDC mapping (no Y flip)
                             float x = (left / sw) * 2f - 1f;
                             float y = (top / sh) * 2f - 1f;
                             float w = (width / sw) * 2f;
                             float h = (height / sh) * 2f;
                             float cx = x + w * 0.5f;
                             float cy = y + h * 0.5f;
-                            Matrix4x4 panelTransform = Matrix4x4.CreateScale(w, h, 1f) * Matrix4x4.CreateTranslation(cx, cy, 0f);
+
+                            Matrix4x4 panelTransform = Matrix4x4.CreateScale(w, h, 1f) *
+                                                       Matrix4x4.CreateTranslation(cx, cy, 0f);
 
                             string meshId = rule.MeshSource.StartsWith("fixed:") ? rule.MeshSource.Substring(6) : rule.MeshSource;
                             if (MeshBuffer.Get(meshId, out var vbuf, out var ibuf, out uint idxCount))
@@ -143,30 +146,13 @@ namespace SETUE.Scene
                         break;
 
                     case "texts":
-                        foreach (var (e, text, _) in world.Query<TextComponent, TransformComponent>())
+                        foreach (var (e, text, transform) in world.Query<TextComponent, TransformComponent>())
                         {
                             string fontId = string.IsNullOrEmpty(text.FontId) ? "default" : text.FontId;
                             var font = SETUE.UI.Fonts.Get(fontId);
                             if (font == null) continue;
 
-                            // Get current transform from world and update position from parent panel
-                            var textTransform = world.GetComponent<TransformComponent>(e);
-                            if (!string.IsNullOrEmpty(text.PanelId) && Panels.All.TryGetValue(text.PanelId, out var panel))
-                            {
-                                float padding = 10f;
-                                float xPos = panel.X + padding;
-                                float yPos = panel.Y + panel.Height * 0.5f;
-
-                                if (text.Align == "center")
-                                    xPos = panel.X + panel.Width * 0.5f;
-                                else if (text.Align == "right")
-                                    xPos = panel.X + panel.Width - padding;
-
-                                textTransform.Position = new Vector3(xPos, yPos, 0);
-                                world.SetComponent(e, textTransform);
-                            }
-
-                            BuildTextBuffersFromECS(text, textTransform, font, sw, sh, out var vbuf, out var ibuf, out uint idxCount);
+                            BuildTextBuffers(text, transform, font, sw, sh, out var vbuf, out var ibuf, out uint idxCount);
                             if (idxCount > 0)
                             {
                                 Commands.Add(new DrawCommand2D
@@ -190,7 +176,7 @@ namespace SETUE.Scene
             Commands.Sort((a, b) => a.Order.CompareTo(b.Order));
         }
 
-        private static void BuildTextBuffersFromECS(TextComponent text, TransformComponent transform, SETUE.UI.Font atlas, float sw, float sh,
+        private static void BuildTextBuffers(TextComponent text, TransformComponent transform, SETUE.UI.Font font, float sw, float sh,
             out VkBuffer vbuf, out VkBuffer ibuf, out uint indexCount)
         {
             vbuf = default; ibuf = default; indexCount = 0;
@@ -200,58 +186,69 @@ namespace SETUE.Scene
             List<uint> indices = new();
             uint idxOffset = 0;
 
-            float totalW = 0f;
+            float startX = transform.Position.X;
+            float startY = transform.Position.Y;
+
+            float totalWidth = 0f;
             foreach (char c in text.Content)
-                if (atlas.Glyphs.TryGetValue(c, out var g)) totalW += g.AdvanceX;
+                if (font.Glyphs.TryGetValue(c, out var g)) totalWidth += g.AdvanceX;
 
-            float x = transform.Position.X;
-            float y = transform.Position.Y;
-
+            float penX = startX;
             if (text.Align == "center")
-                x -= totalW * 0.5f;
+                penX -= totalWidth * 0.5f;
             else if (text.Align == "right")
-                x -= totalW;
+                penX -= totalWidth;
 
             float cosR = MathF.Cos(text.Rotation * MathF.PI / 180f);
             float sinR = MathF.Sin(text.Rotation * MathF.PI / 180f);
 
             foreach (char c in text.Content)
             {
-                if (!atlas.Glyphs.TryGetValue(c, out var glyph)) { x += 8f; continue; }
+                if (!font.Glyphs.TryGetValue(c, out var glyph))
+                {
+                    penX += 8f;
+                    continue;
+                }
 
-                float x0 = (float)Math.Floor(x), y0 = (float)Math.Floor(y - atlas.Ascent);
-                float x1 = x0 + glyph.Width, y1 = y0 + glyph.Height;
+                float x0 = penX;
+                float y0 = startY - font.Ascent;
+                float x1 = x0 + glyph.Width;
+                float y1 = y0 + glyph.Height;
 
-                float nx0, ny0, nx1, ny1, nx2, ny2, nx3, ny3;
+                float rx0, ry0, rx1, ry1, rx2, ry2, rx3, ry3;
                 if (text.Rotation == 0)
                 {
-                    nx0 = (x0 / sw) * 2f - 1f; ny0 = (y0 / sh) * 2f - 1f;
-                    nx1 = (x1 / sw) * 2f - 1f; ny1 = (y0 / sh) * 2f - 1f;
-                    nx2 = (x1 / sw) * 2f - 1f; ny2 = (y1 / sh) * 2f - 1f;
-                    nx3 = (x0 / sw) * 2f - 1f; ny3 = (y1 / sh) * 2f - 1f;
+                    rx0 = x0; ry0 = y0;
+                    rx1 = x1; ry1 = y0;
+                    rx2 = x1; ry2 = y1;
+                    rx3 = x0; ry3 = y1;
                 }
                 else
                 {
-                    float cx = transform.Position.X, cy = transform.Position.Y;
-                    (float rx00, float ry00) = RotateScreen(x0, y0, cx, cy, cosR, sinR);
-                    (float rx10, float ry10) = RotateScreen(x1, y0, cx, cy, cosR, sinR);
-                    (float rx11, float ry11) = RotateScreen(x1, y1, cx, cy, cosR, sinR);
-                    (float rx01, float ry01) = RotateScreen(x0, y1, cx, cy, cosR, sinR);
-
-                    nx0 = (rx00 / sw) * 2f - 1f; ny0 = (ry00 / sh) * 2f - 1f;
-                    nx1 = (rx10 / sw) * 2f - 1f; ny1 = (ry10 / sh) * 2f - 1f;
-                    nx2 = (rx11 / sw) * 2f - 1f; ny2 = (ry11 / sh) * 2f - 1f;
-                    nx3 = (rx01 / sw) * 2f - 1f; ny3 = (ry01 / sh) * 2f - 1f;
+                    (rx0, ry0) = RotatePoint(x0, y0, startX, startY, cosR, sinR);
+                    (rx1, ry1) = RotatePoint(x1, y0, startX, startY, cosR, sinR);
+                    (rx2, ry2) = RotatePoint(x1, y1, startX, startY, cosR, sinR);
+                    (rx3, ry3) = RotatePoint(x0, y1, startX, startY, cosR, sinR);
                 }
 
-                // Vertex format: pos3 (x,y,0), normal3 (U,V,0), uv2 (U,V)  -- 8 floats total
+                // Original NDC conversion (no Y flip)
+                float nx0 = (rx0 / sw) * 2f - 1f;
+                float ny0 = (ry0 / sh) * 2f - 1f;
+                float nx1 = (rx1 / sw) * 2f - 1f;
+                float ny1 = (ry1 / sh) * 2f - 1f;
+                float nx2 = (rx2 / sw) * 2f - 1f;
+                float ny2 = (ry2 / sh) * 2f - 1f;
+                float nx3 = (rx3 / sw) * 2f - 1f;
+                float ny3 = (ry3 / sh) * 2f - 1f;
+
+                // Vertex format: vec2 position, vec2 texCoord (4 floats per vertex)
                 verts.AddRange(new[] {
-                    nx0, ny0, 0f,  glyph.U0, glyph.V0, 0f,  glyph.U0, glyph.V0,
-                    nx1, ny1, 0f,  glyph.U1, glyph.V0, 0f,  glyph.U1, glyph.V0,
-                    nx2, ny2, 0f,  glyph.U1, glyph.V1, 0f,  glyph.U1, glyph.V1,
-                    nx0, ny0, 0f,  glyph.U0, glyph.V0, 0f,  glyph.U0, glyph.V0,
-                    nx2, ny2, 0f,  glyph.U1, glyph.V1, 0f,  glyph.U1, glyph.V1,
-                    nx3, ny3, 0f,  glyph.U0, glyph.V1, 0f,  glyph.U0, glyph.V1
+                    nx0, ny0, glyph.U0, glyph.V0,
+                    nx1, ny1, glyph.U1, glyph.V0,
+                    nx2, ny2, glyph.U1, glyph.V1,
+                    nx0, ny0, glyph.U0, glyph.V0,
+                    nx2, ny2, glyph.U1, glyph.V1,
+                    nx3, ny3, glyph.U0, glyph.V1
                 });
 
                 indices.AddRange(new[] {
@@ -260,7 +257,7 @@ namespace SETUE.Scene
                 });
                 idxOffset += 6;
 
-                x += glyph.AdvanceX;
+                penX += glyph.AdvanceX;
             }
 
             if (verts.Count == 0) return;
@@ -278,11 +275,13 @@ namespace SETUE.Scene
             {
                 void* mapped;
                 Vulkan.VK.MapMemory(Vulkan.Device, vmem, 0, vSize, 0, &mapped);
-                fixed (float* src = verts.ToArray()) System.Buffer.MemoryCopy(src, mapped, (long)vSize, (long)vSize);
+                fixed (float* src = verts.ToArray())
+                    System.Buffer.MemoryCopy(src, mapped, (long)vSize, (long)vSize);
                 Vulkan.VK.UnmapMemory(Vulkan.Device, vmem);
 
                 Vulkan.VK.MapMemory(Vulkan.Device, imem, 0, iSize, 0, &mapped);
-                fixed (uint* src = indices.ToArray()) System.Buffer.MemoryCopy(src, mapped, (long)iSize, (long)iSize);
+                fixed (uint* src = indices.ToArray())
+                    System.Buffer.MemoryCopy(src, mapped, (long)iSize, (long)iSize);
                 Vulkan.VK.UnmapMemory(Vulkan.Device, imem);
             }
 
@@ -291,9 +290,10 @@ namespace SETUE.Scene
             Vulkan.DeferFree(ibuf, imem);
         }
 
-        private static (float, float) RotateScreen(float px, float py, float cx, float cy, float cosR, float sinR)
+        private static (float, float) RotatePoint(float x, float y, float cx, float cy, float cosR, float sinR)
         {
-            float dx = px - cx, dy = py - cy;
+            float dx = x - cx;
+            float dy = y - cy;
             return (cx + dx * cosR - dy * sinR, cy + dx * sinR + dy * cosR);
         }
     }

@@ -142,7 +142,10 @@ namespace SETUE.UI
                 var atlas = new Font();
                 if (atlas.Build(id, path, size, spacing, padding))
                 {
-                    Atlases[id] = atlas;
+                    // Upload font atlas to GPU and store descriptor set
+                var ds = Vulkan.GetOrUploadAtlas(atlas, "text_pipeline");
+                atlas.DescriptorSet = ds;
+                Atlases[id] = atlas;
                 }
             }
             Console.WriteLine($"[Fonts] Loaded {Atlases.Count} font(s)");

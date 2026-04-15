@@ -8,11 +8,20 @@ namespace SETUE.Systems
 {
     public static class Texts
     {
+        private static Dictionary<string, float> _panelNextYOffset = new();
+
         public static void Load()
         {
             string path = "Ui/Text.csv";
-            if (!File.Exists(path)) { Console.WriteLine($"[Texts] File not found: {path}"); return; }
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"[Texts] File not found: {path}");
+                return;
+            }
+
             var lines = File.ReadAllLines(path);
+            if (lines.Length < 2) return;
+
             var headers = lines[0].Split(',');
             int iId      = Array.IndexOf(headers, "id");
             int iPanelId = Array.IndexOf(headers, "panel_id");
@@ -25,14 +34,16 @@ namespace SETUE.Systems
             int iSource  = Array.IndexOf(headers, "source");
             int iPrefix  = Array.IndexOf(headers, "prefix");
 
-            var world = Object.ECSWorld; // Changed from ObjectLoader
+            var world = Object.ECSWorld;
+            _panelNextYOffset.Clear();
 
             for (int i = 1; i < lines.Length; i++)
             {
                 var line = lines[i].Trim();
                 if (string.IsNullOrEmpty(line) || line.StartsWith('#')) continue;
-                var p = line.Split(',');
-                string Get(int idx) => idx >= 0 && idx < p.Length ? p[idx].Trim() : "";
+                var parts = line.Split(',');
+
+                string Get(int idx) => idx >= 0 && idx < parts.Length ? parts[idx].Trim() : "";
 
                 string id = Get(iId);
                 string panelId = Get(iPanelId);
@@ -44,7 +55,7 @@ namespace SETUE.Systems
                 string source = Get(iSource);
                 string prefix = Get(iPrefix);
 
-                Vector4 color = new Vector4(1,1,1,1);
+                Vector4 color = new Vector4(1, 1, 1, 1);
                 string cid = Get(iColorId);
                 if (!string.IsNullOrEmpty(cid))
                 {
@@ -67,6 +78,7 @@ namespace SETUE.Systems
                     Prefix = prefix,
                     PanelId = panelId
                 });
+
                 world.AddComponent(e, new TransformComponent
                 {
                     Position = Vector3.Zero,
@@ -74,29 +86,16 @@ namespace SETUE.Systems
                     Rotation = Quaternion.Identity
                 });
 
-                // Position text relative to its parent panel
-                if (!string.IsNullOrEmpty(panelId) && Panels.All.TryGetValue(panelId, out var panel))
-                {
-                    float padding = 10f;
-                    float x = panel.X + padding;
-                    float y = panel.Y + panel.Height * 0.5f;
-
-                    if (align == "center")
-                        x = panel.X + panel.Width * 0.5f;
-                    else if (align == "right")
-                        x = panel.X + panel.Width - padding;
-
-                    var transform = world.GetComponent<TransformComponent>(e);
-                    transform.Position = new Vector3(x, y, 0);
-                    world.SetComponent(e, transform);
-                }
+                if (!string.IsNullOrEmpty(panelId) && !_panelNextYOffset.ContainsKey(panelId))
+                    _panelNextYOffset[panelId] = 0f;
             }
+
             Console.WriteLine($"[Texts] Loaded {world.Query<TextComponent>().Count()} text entities");
         }
 
         public static void Update()
         {
-            var world = Object.ECSWorld; // Changed from ObjectLoader
+            var world = Object.ECSWorld;
             Entity? selectedEntity = null;
             foreach (var e in world.Query<SelectedComponent>())
             {
@@ -104,25 +103,90 @@ namespace SETUE.Systems
                 break;
             }
 
+            _panelNextYOffset.Clear();
+
             foreach (var e in world.Query<TextComponent>())
             {
                 var text = world.GetComponent<TextComponent>(e);
-                if (string.IsNullOrEmpty(text.Source)) continue;
+                var transform = world.GetComponent<TransformComponent>(e);
 
-                string newContent = text.Content;
-                if (selectedEntity != null)
+                if (!string.IsNullOrEmpty(text.Source))
                 {
-                    newContent = $"{text.Prefix} 0.000";
-                }
-                else
-                {
-                    newContent = $"{text.Prefix} ---";
+                    string newContent = text.Content;
+                    if (selectedEntity != null && world.HasComponent<TransformComponent>(selectedEntity.Value))
+                    {
+                        var selTrans = world.GetComponent<TransformComponent>(selectedEntity.Value);
+                        switch (text.Source)
+                        {
+                            case "position":
+                                newContent = $"{text.Prefix} {selTrans.Position.X:F3}, {selTrans.Position.Y:F3}, {selTrans.Position.Z:F3}";
+                                break;
+                            case "rotation":
+                                newContent = $"{text.Prefix} {selTrans.Rotation.X:F2}, {selTrans.Rotation.Y:F2}, {selTrans.Rotation.Z:F2}, {selTrans.Rotation.W:F2}";
+                                break;
+                            case "scale":
+                                newContent = $"{text.Prefix} {selTrans.Scale.X:F3}, {selTrans.Scale.Y:F3}, {selTrans.Scale.Z:F3}";
+                                break;
+                            default:
+                                newContent = $"{text.Prefix} ---";
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        newContent = $"{text.Prefix} ---";
+                    }
+
+                    if (newContent != text.Content)
+                    {
+                        text.Content = newContent;
+                        world.SetComponent(e, text);
+                    }
                 }
 
-                if (newContent != text.Content)
+                if (!string.IsNullOrEmpty(text.PanelId))
                 {
-                    text.Content = newContent;
-                    world.SetComponent(e, text);
+                    Entity? panelEntity = null;
+                    PanelComponent panelComp = default;
+                    TransformComponent panelTrans = default;
+                    foreach (var (pe, pc, pt) in world.Query<PanelComponent, TransformComponent>())
+                    {
+                        if (pc.Id == text.PanelId)
+                        {
+                            panelEntity = pe;
+                            panelComp = pc;
+                            panelTrans = pt;
+                            break;
+                        }
+                    }
+
+                    if (panelEntity.HasValue && panelComp.Visible)
+                    {
+                        Vector3 panelPos = panelTrans.Position;
+                        Vector3 panelScale = panelTrans.Scale;
+
+                        float panelLeft   = panelPos.X - panelScale.X * 0.5f;
+                        float panelTop    = panelPos.Y - panelScale.Y * 0.5f;
+                        float panelWidth  = panelScale.X;
+                        // float panelHeight = panelScale.Y; // not directly used here
+
+                        if (!_panelNextYOffset.ContainsKey(text.PanelId))
+                            _panelNextYOffset[text.PanelId] = 0f;
+                        float yOffset = _panelNextYOffset[text.PanelId];
+                        float lineHeight = 20f;
+                        _panelNextYOffset[text.PanelId] += lineHeight;
+
+                        float x = panelLeft + 10f;
+                        if (text.Align == "center")
+                            x = panelLeft + panelWidth * 0.5f;
+                        else if (text.Align == "right")
+                            x = panelLeft + panelWidth - 10f;
+
+                        float y = panelTop + 10f + yOffset;
+
+                        transform.Position = new Vector3(x, y, 0);
+                        world.SetComponent(e, transform);
+                    }
                 }
             }
         }

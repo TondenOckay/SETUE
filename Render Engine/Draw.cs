@@ -61,19 +61,16 @@ namespace SETUE
             var cmd = CurrentCmd;
             var world = Object.ECSWorld;
 
-            // Diagnostic: print all pipeline handles from Shaders.All
             Console.WriteLine("[Draw] Pipeline handles from Shaders.All:");
             foreach (var kv in Shaders.All)
             {
                 Console.WriteLine($"  {kv.Key}: handle={kv.Value.Handle.Handle}");
             }
 
-            // Also print from the separate dictionary
             Console.WriteLine("[Draw] Using GetHandle for " + _pipelineId);
             var handleViaGet = Shaders.GetHandle(_pipelineId);
             Console.WriteLine($"  GetHandle returned handle={handleViaGet.Handle}");
 
-            // Now use the dictionary directly
             if (!Shaders.All.TryGetValue(_pipelineId, out var shader))
             {
                 Console.WriteLine($"[Draw] Pipeline '{_pipelineId}' not found in Shaders.All");
@@ -94,7 +91,6 @@ namespace SETUE
                 drawCount3D++;
                 var material = world.GetComponent<MaterialComponent>(e);
 
-                // Use the pipeline assigned to this specific object
                 if (!Shaders.All.TryGetValue(material.PipelineId, out var objShader))
                 {
                     Console.WriteLine($"[Draw] Pipeline '{material.PipelineId}' not found for entity {e}");
@@ -141,10 +137,15 @@ namespace SETUE
                 VK.CmdBindIndexBuffer(cmd, c.IndexBuffer, 0, IndexType.Uint32);
 
                 // Bind font atlas descriptor set if text
-                if (c.IsText && SETUE.UI.Fonts.Get(c.FontId) is { } font && font.DescriptorSet.Handle != 0)
+                if (c.IsText && !string.IsNullOrEmpty(c.FontId))
                 {
-                    VK.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, shader.Layout,
-                        0, 1, font.DescriptorSet, 0, null);
+                    var font = SETUE.UI.Fonts.Get(c.FontId);
+                    if (font != null && font.DescriptorSet.Handle != 0)
+                    {
+                        var ds = font.DescriptorSet;
+                        VK.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, shader.Layout,
+                            0, 1, &ds, 0, null);
+                    }
                 }
 
                 PushConstants pc = new PushConstants
