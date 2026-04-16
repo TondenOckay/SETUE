@@ -1,7 +1,7 @@
-parent_name,object_name,move_edge,script,min_distance,max_distance
-left_border,left_border,all,slide_x,50,600
-left_border,left_panel,right,slide_x,,
-right_border,right_border,all,slide_x,1200,1200
-right_border,right_panel,left,slide_x,,
-right_border,tab_item,all,slide_x,,
-right_border,tab_view,all,slide_x,,
+parent_name,object_name,move_edge,min_x,max_x
+left_border,left_border,all,50,600
+left_border,left_panel,right,,
+right_border,right_border,all,1200,1800
+right_border,right_panel,left,,
+right_border,tab_item,all,,
+right_border,tab_view,all,,

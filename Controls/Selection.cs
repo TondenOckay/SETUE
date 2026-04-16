@@ -14,20 +14,19 @@ namespace SETUE.Controls
         public string HitTestValue = "";
         public string OnClickOperation = "";
         public bool ConsumeInput;
-        public bool RaycastEnabled;
         public string ActionId = "";
     }
 
-    public struct ActionRequest : IComponent
+    public struct DragState : IComponent
     {
-        public string ParentName;
-        public Vector2 MouseStartPos;
+        public string ActionId;
+        public Vector2 StartMousePos;    // world position
     }
 
     public static class Selection
     {
         private static List<SelectionRule> _rules = new();
-        private static Entity? _actionRequestEntity;
+        private static Entity? _dragStateEntity;
 
         public static void Load()
         {
@@ -53,7 +52,6 @@ namespace SETUE.Controls
                     HitTestValue = Get(G("hit_test_value")),
                     OnClickOperation = Get(G("on_click_operation")),
                     ConsumeInput = Get(G("consume_input")).ToLower() == "true",
-                    RaycastEnabled = Get(G("raycast_enabled")).ToLower() == "true",
                     ActionId = Get(G("action_id"))
                 });
             }
@@ -64,25 +62,39 @@ namespace SETUE.Controls
         {
             var world = Object.ECSWorld;
 
-            if (_actionRequestEntity.HasValue && world.HasComponent<ActionRequest>(_actionRequestEntity.Value))
-                world.DestroyEntity(_actionRequestEntity.Value);
-            _actionRequestEntity = null;
+            // Handle active drag
+            if (_dragStateEntity.HasValue && world.HasComponent<DragState>(_dragStateEntity.Value))
+            {
+                var state = world.GetComponent<DragState>(_dragStateEntity.Value);
+                if (Input.IsActionHeld("select_object"))
+                {
+                    Vector2 current = Input.MousePos;
+                    Vector2 delta = current - state.StartMousePos;
+                    Action.ProcessDrag(state.ActionId, delta);
+                }
+                else
+                {
+                    Action.EndDrag(state.ActionId);
+                    world.DestroyEntity(_dragStateEntity.Value);
+                    _dragStateEntity = null;
+                }
+                return;
+            }
 
+            // Detect new clicks
             foreach (var rule in _rules)
             {
                 if (!Input.IsActionPressed(rule.InputAction)) continue;
                 var mouse = Input.MousePos;
 
-                Entity? hitEntity = HitTest(world, rule, mouse);
-                if (hitEntity != null && !string.IsNullOrEmpty(rule.ActionId))
+                if (HitTest(world, rule, mouse) && !string.IsNullOrEmpty(rule.ActionId))
                 {
-                    var reqEntity = world.CreateEntity();
-                    world.AddComponent(reqEntity, new ActionRequest
+                    _dragStateEntity = world.CreateEntity();
+                    world.AddComponent(_dragStateEntity.Value, new DragState
                     {
-                        ParentName = rule.ActionId,
-                        MouseStartPos = mouse
+                        ActionId = rule.ActionId,
+                        StartMousePos = mouse
                     });
-                    _actionRequestEntity = reqEntity;
 
                     if (rule.ConsumeInput)
                         Input.Consume(rule.InputAction);
@@ -91,25 +103,26 @@ namespace SETUE.Controls
             }
         }
 
-        private static Entity? HitTest(World world, SelectionRule rule, Vector2 mouse)
+        private static bool HitTest(World world, SelectionRule rule, Vector2 mouse)
         {
-            if (rule.HitTestType == "panel_prefix")
-            {
-                foreach (var entity in world.Query<TransformComponent>())
-                {
-                    if (!world.HasComponent<PanelComponent>(entity)) continue;
-                    var trans = world.GetComponent<TransformComponent>(entity);
-                    var panel = world.GetComponent<PanelComponent>(entity);
+            if (rule.HitTestType != "panel_prefix") return false;
 
-                    if (panel.Visible && panel.Id.StartsWith(rule.HitTestValue) &&
-                        mouse.X >= trans.Position.X - trans.Scale.X / 2 && mouse.X <= trans.Position.X + trans.Scale.X / 2 &&
-                        mouse.Y >= trans.Position.Y - trans.Scale.Y / 2 && mouse.Y <= trans.Position.Y + trans.Scale.Y / 2)
-                    {
-                        return entity;
-                    }
+            foreach (var e in world.Query<TransformComponent>())
+            {
+                if (!world.HasComponent<PanelComponent>(e)) continue;
+                var trans = world.GetComponent<TransformComponent>(e);
+                var panel = world.GetComponent<PanelComponent>(e);
+
+                if (panel.Visible && panel.Id.StartsWith(rule.HitTestValue) &&
+                    mouse.X >= trans.Position.X - trans.Scale.X / 2 &&
+                    mouse.X <= trans.Position.X + trans.Scale.X / 2 &&
+                    mouse.Y >= trans.Position.Y - trans.Scale.Y / 2 &&
+                    mouse.Y <= trans.Position.Y + trans.Scale.Y / 2)
+                {
+                    return true;
                 }
             }
-            return null;
+            return false;
         }
     }
 }

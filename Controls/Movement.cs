@@ -46,7 +46,7 @@ namespace SETUE.Controls
         public static Vector3 CalculateDelta(string ruleId, float rawDeltaX, float rawDeltaY)
         {
             if (!_rules.TryGetValue(ruleId, out var rule))
-                return new Vector3(rawDeltaX, rawDeltaY, 0);
+                return new Vector3(rawDeltaX, 0, 0);   // Safe fallback: X only
 
             float amountX = rawDeltaX * rule.Sensitivity;
             float amountY = rawDeltaY * rule.Sensitivity;
@@ -65,8 +65,19 @@ namespace SETUE.Controls
                 AxisConstraint.XY => new Vector3(amountX, amountY, 0),
                 AxisConstraint.XZ => new Vector3(amountX, 0, amountX),
                 AxisConstraint.YZ => new Vector3(0, amountY, amountY),
-                _ => new Vector3(amountX, amountY, 0)
+                _ => new Vector3(amountX, 0, 0)   // Fallback to X only
             };
+        }
+
+        public static bool IsXAxisMovement(string ruleId)
+        {
+            if (_rules.TryGetValue(ruleId, out var rule))
+            {
+                return rule.AxisConstraint == AxisConstraint.X ||
+                       rule.AxisConstraint == AxisConstraint.XY ||
+                       rule.AxisConstraint == AxisConstraint.XZ;
+            }
+            return true; // Default
         }
     }
 }

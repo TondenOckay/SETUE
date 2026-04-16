@@ -11,314 +11,236 @@ namespace SETUE.Controls
         public string ParentName = "";
         public string ObjectName = "";
         public string MoveEdge = "";
-        public string Script = "";
-        public float MinDistance = float.NaN;
-        public float MaxDistance = float.NaN;
+        public float MinX = float.NaN;
+        public float MaxX = float.NaN;
     }
 
     public struct ActiveDrag : IComponent
     {
-        public string Script;
-        public Vector2 LastMousePos;
-        public Dictionary<Entity, string> EntityMoveEdges;
-        public Dictionary<Entity, (Vector3 pos, Vector3 scale)> OriginalTransforms;
+        public string ParentName;
         public Entity ParentEntity;
-        // Store per‑entity limits (from CSV)
-        public Dictionary<Entity, (float min, float max)> EntityLimits;
+        public Dictionary<Entity, string> MoveEdges;
+        public Dictionary<Entity, (Vector3 pos, Vector3 scale)> Originals;
+        public Dictionary<Entity, (float minX, float maxX)> Limits;
+        public Dictionary<Entity, float> FixedEdgePositions;
     }
 
     public static class Action
     {
-        private static List<ActionRule> _actionRules = new();
+        private static List<ActionRule> _rules = new();
 
         public static void Load()
         {
             string path = "Controls/Action.csv";
-            if (!File.Exists(path))
-            {
-                Console.WriteLine($"[Action] Missing {path}");
-                return;
-            }
+            if (!File.Exists(path)) return;
 
             var lines = File.ReadAllLines(path);
             if (lines.Length < 2) return;
 
             var headers = lines[0].Split(',');
-            int idxParent = Array.IndexOf(headers, "parent_name");
-            int idxObject = Array.IndexOf(headers, "object_name");
-            int idxEdge = Array.IndexOf(headers, "move_edge");
-            int idxScript = Array.IndexOf(headers, "script");
-            int idxMin = Array.IndexOf(headers, "min_distance");
-            int idxMax = Array.IndexOf(headers, "max_distance");
+            int p = Array.IndexOf(headers, "parent_name");
+            int o = Array.IndexOf(headers, "object_name");
+            int e = Array.IndexOf(headers, "move_edge");
+            int min = Array.IndexOf(headers, "min_x");
+            int max = Array.IndexOf(headers, "max_x");
 
-            _actionRules.Clear();
+            _rules.Clear();
             for (int i = 1; i < lines.Length; i++)
             {
-                var p = lines[i].Split(',');
-                string Get(int idx) => idx >= 0 && idx < p.Length ? p[idx].Trim() : "";
+                var parts = lines[i].Split(',');
+                string Get(int idx) => idx >= 0 && idx < parts.Length ? parts[idx].Trim() : "";
 
-                _actionRules.Add(new ActionRule
+                _rules.Add(new ActionRule
                 {
-                    ParentName = Get(idxParent),
-                    ObjectName = Get(idxObject),
-                    MoveEdge = Get(idxEdge),
-                    Script = Get(idxScript),
-                    MinDistance = float.TryParse(Get(idxMin), out var min) ? min : float.NaN,
-                    MaxDistance = float.TryParse(Get(idxMax), out var max) ? max : float.NaN
+                    ParentName = Get(p),
+                    ObjectName = Get(o),
+                    MoveEdge = Get(e),
+                    MinX = float.TryParse(Get(min), out var mn) ? mn : float.NaN,
+                    MaxX = float.TryParse(Get(max), out var mx) ? mx : float.NaN
                 });
             }
-            Console.WriteLine($"[Action] Loaded {_actionRules.Count} action rules");
+            Console.WriteLine($"[Action] Loaded {_rules.Count} rules");
         }
 
-        public static void Update()
+        public static void ProcessDrag(string parentName, Vector2 delta)
         {
             var world = Object.ECSWorld;
 
-            // Process new ActionRequests
-            foreach (var requestEntity in world.Query<ActionRequest>())
+            Entity? dragEntity = null;
+            ActiveDrag drag = default;
+            foreach (var e in world.Query<ActiveDrag>())
             {
-                var req = world.GetComponent<ActionRequest>(requestEntity);
-                StartDrag(world, req.ParentName, req.MouseStartPos);
-                world.DestroyEntity(requestEntity);
-            }
-
-            // Update all active drags
-            foreach (var parentEntity in world.Query<ActiveDrag>())
-            {
-                var drag = world.GetComponent<ActiveDrag>(parentEntity);
-
-                if (!Input.IsActionHeld("select_object"))
+                var d = world.GetComponent<ActiveDrag>(e);
+                if (d.ParentName == parentName)
                 {
-                    EndDrag(world, parentEntity);
-                    continue;
-                }
-
-                Vector2 currentMouse = Input.MousePos;
-                float rawDeltaX = currentMouse.X - drag.LastMousePos.X;
-                float rawDeltaY = currentMouse.Y - drag.LastMousePos.Y;
-
-                if (Math.Abs(rawDeltaX) > 0.001f || Math.Abs(rawDeltaY) > 0.001f)
-                {
-                    Vector3 delta = Movement.CalculateDelta(drag.Script, rawDeltaX, rawDeltaY);
-
-                    // --- 1. Move the parent entity first (with its own limits) ---
-                    var parentTrans = world.GetComponent<TransformComponent>(parentEntity);
-                    var parentOrig = drag.OriginalTransforms[parentEntity];
-                    
-                    float newParentX = parentTrans.Position.X + delta.X;
-                    float newParentY = parentTrans.Position.Y + delta.Y;
-
-                    // Apply parent's limits if they exist
-                    if (drag.EntityLimits.TryGetValue(parentEntity, out var parentLimits))
-                    {
-                        if (!float.IsNaN(parentLimits.min))
-                        {
-                            newParentX = Math.Max(newParentX, parentLimits.min);
-                            newParentY = Math.Max(newParentY, parentLimits.min);
-                        }
-                        if (!float.IsNaN(parentLimits.max))
-                        {
-                            newParentX = Math.Min(newParentX, parentLimits.max);
-                            newParentY = Math.Min(newParentY, parentLimits.max);
-                        }
-                    }
-
-                    parentTrans.Position = new Vector3(newParentX, newParentY, parentTrans.Position.Z);
-                    world.SetComponent(parentEntity, parentTrans);
-
-                    // --- 2. Move all followers based on the new parent position ---
-                    foreach (var kv in drag.EntityMoveEdges)
-                    {
-                        var entity = kv.Key;
-                        var moveEdge = kv.Value;
-
-                        if (entity.Equals(parentEntity))
-                            continue;
-
-                        var trans = world.GetComponent<TransformComponent>(entity);
-                        var orig = drag.OriginalTransforms[entity];
-
-                        if (moveEdge == "all")
-                        {
-                            float newX = orig.pos.X + (parentTrans.Position.X - parentOrig.pos.X);
-                            float newY = orig.pos.Y + (parentTrans.Position.Y - parentOrig.pos.Y);
-                            
-                            // Apply follower's own limits
-                            if (drag.EntityLimits.TryGetValue(entity, out var limits))
-                            {
-                                if (!float.IsNaN(limits.min))
-                                {
-                                    newX = Math.Max(newX, limits.min);
-                                    newY = Math.Max(newY, limits.min);
-                                }
-                                if (!float.IsNaN(limits.max))
-                                {
-                                    newX = Math.Min(newX, limits.max);
-                                    newY = Math.Min(newY, limits.max);
-                                }
-                            }
-                            
-                            trans.Position = new Vector3(newX, newY, trans.Position.Z);
-                        }
-                        else if (moveEdge == "right" || moveEdge == "left" || moveEdge == "top" || moveEdge == "bottom")
-                        {
-                            AdjustEdge(ref trans, orig, parentTrans, parentOrig, moveEdge, drag.EntityLimits.GetValueOrDefault(entity));
-                        }
-                        else
-                        {
-                            float newX = trans.Position.X + delta.X;
-                            float newY = trans.Position.Y + delta.Y;
-                            
-                            if (drag.EntityLimits.TryGetValue(entity, out var limits))
-                            {
-                                if (!float.IsNaN(limits.min))
-                                {
-                                    newX = Math.Max(newX, limits.min);
-                                    newY = Math.Max(newY, limits.min);
-                                }
-                                if (!float.IsNaN(limits.max))
-                                {
-                                    newX = Math.Min(newX, limits.max);
-                                    newY = Math.Min(newY, limits.max);
-                                }
-                            }
-                            
-                            trans.Position = new Vector3(newX, newY, trans.Position.Z);
-                        }
-
-                        world.SetComponent(entity, trans);
-                    }
-
-                    drag.LastMousePos = currentMouse;
-                    world.SetComponent(parentEntity, drag);
-                }
-            }
-        }
-
-        private static void StartDrag(World world, string parentName, Vector2 mousePos)
-        {
-            var entitiesToMove = new Dictionary<Entity, string>();
-            var originalTransforms = new Dictionary<Entity, (Vector3 pos, Vector3 scale)>();
-            var entityLimits = new Dictionary<Entity, (float min, float max)>();
-            string scriptToUse = "slide_x";
-
-            // Find the parent entity
-            Entity? parentEntity = null;
-            foreach (var entity in world.Query<PanelComponent>())
-            {
-                var panel = world.GetComponent<PanelComponent>(entity);
-                if (panel.Id == parentName)
-                {
-                    parentEntity = entity;
+                    dragEntity = e;
+                    drag = d;
                     break;
                 }
             }
-            if (parentEntity == null)
+
+            if (!dragEntity.HasValue)
             {
-                Console.WriteLine($"[Action] Parent entity '{parentName}' not found.");
+                StartDrag(parentName);
                 return;
             }
 
-            // Add parent to movement list
-            var parentTrans = world.GetComponent<TransformComponent>(parentEntity.Value);
-            entitiesToMove[parentEntity.Value] = "parent";
-            originalTransforms[parentEntity.Value] = (parentTrans.Position, parentTrans.Scale);
+            // 1. Move the parent FIRST (direct delta, clamped)
+            var parentTrans = world.GetComponent<TransformComponent>(drag.ParentEntity);
+            var parentOrig = drag.Originals[drag.ParentEntity];
+            float intendedParentX = parentOrig.pos.X + delta.X;
+            float newParentX = Clamp(intendedParentX, drag.Limits[drag.ParentEntity].minX, drag.Limits[drag.ParentEntity].maxX);
+            parentTrans.Position = new Vector3(newParentX, parentOrig.pos.Y, parentOrig.pos.Z);
+            world.SetComponent(drag.ParentEntity, parentTrans);
 
-            // Find all followers from Action.csv
-            foreach (var rule in _actionRules)
+            // Calculate the ACTUAL movement the parent underwent (after clamping)
+            float actualParentDeltaX = parentTrans.Position.X - parentOrig.pos.X;
+
+            // 2. Move all followers based on the PARENT'S NEW POSITION and ACTUAL DELTA
+            foreach (var kv in drag.MoveEdges)
             {
-                if (rule.ParentName == parentName)
-                {
-                    scriptToUse = rule.Script;
+                var entity = kv.Key;
+                if (entity.Equals(drag.ParentEntity)) continue;
 
-                    foreach (var entity in world.Query<PanelComponent>())
+                var edge = kv.Value;
+                var trans = world.GetComponent<TransformComponent>(entity);
+                var orig = drag.Originals[entity];
+                var limits = drag.Limits.GetValueOrDefault(entity);
+
+                if (edge == "all")
+                {
+                    // Use the actual delta the parent moved, not the intended one
+                    float newX = orig.pos.X + actualParentDeltaX;
+                    newX = Clamp(newX, limits.minX, limits.maxX);
+                    trans.Position = new Vector3(newX, orig.pos.Y, orig.pos.Z);
+                }
+                else
+                {
+                    float fixedEdgePos = drag.FixedEdgePositions[entity];
+                    AdjustEdgeFromParent(ref trans, orig, parentTrans, parentOrig, edge, limits, fixedEdgePos);
+                }
+
+                world.SetComponent(entity, trans);
+            }
+        }
+
+        public static void StartDrag(string parentName)
+        {
+            var world = Object.ECSWorld;
+
+            Entity? parentEntity = null;
+            foreach (var e in world.Query<PanelComponent>())
+                if (world.GetComponent<PanelComponent>(e).Id == parentName)
+                { parentEntity = e; break; }
+            if (parentEntity == null) return;
+
+            var moveEdges = new Dictionary<Entity, string>();
+            var originals = new Dictionary<Entity, (Vector3, Vector3)>();
+            var limits = new Dictionary<Entity, (float min, float max)>();
+            var fixedEdgePositions = new Dictionary<Entity, float>();
+
+            foreach (var rule in _rules)
+            {
+                if (rule.ParentName != parentName) continue;
+
+                foreach (var e in world.Query<PanelComponent>())
+                {
+                    if (world.GetComponent<PanelComponent>(e).Id != rule.ObjectName) continue;
+
+                    var trans = world.GetComponent<TransformComponent>(e);
+                    moveEdges[e] = rule.MoveEdge;
+                    originals[e] = (trans.Position, trans.Scale);
+                    limits[e] = (rule.MinX, rule.MaxX);
+
+                    if (rule.MoveEdge != "all")
                     {
-                        var panel = world.GetComponent<PanelComponent>(entity);
-                        if (panel.Id == rule.ObjectName)
+                        float fixedEdge = 0f;
+                        switch (rule.MoveEdge)
                         {
-                            if (!entity.Equals(parentEntity.Value))
-                            {
-                                entitiesToMove[entity] = rule.MoveEdge;
-                            }
-                            var trans = world.GetComponent<TransformComponent>(entity);
-                            originalTransforms[entity] = (trans.Position, trans.Scale);
-                            
-                            // Store limits for this entity
-                            entityLimits[entity] = (rule.MinDistance, rule.MaxDistance);
-                            break;
+                            case "left":   fixedEdge = trans.Position.X + trans.Scale.X / 2f; break;
+                            case "right":  fixedEdge = trans.Position.X - trans.Scale.X / 2f; break;
+                            case "top":    fixedEdge = trans.Position.Y + trans.Scale.Y / 2f; break;
+                            case "bottom": fixedEdge = trans.Position.Y - trans.Scale.Y / 2f; break;
                         }
+                        fixedEdgePositions[e] = fixedEdge;
                     }
+                    break;
                 }
             }
 
             world.AddComponent(parentEntity.Value, new ActiveDrag
             {
-                Script = scriptToUse,
-                LastMousePos = mousePos,
-                EntityMoveEdges = entitiesToMove,
-                OriginalTransforms = originalTransforms,
+                ParentName = parentName,
                 ParentEntity = parentEntity.Value,
-                EntityLimits = entityLimits
+                MoveEdges = moveEdges,
+                Originals = originals,
+                Limits = limits,
+                FixedEdgePositions = fixedEdgePositions
             });
 
-            Console.WriteLine($"[Action] Started drag on '{parentName}' with {entitiesToMove.Count - 1} followers.");
+            Console.WriteLine($"[Action] Started drag on '{parentName}' with {moveEdges.Count - 1} followers.");
         }
 
-        private static void EndDrag(World world, Entity entity)
+        public static void EndDrag(string parentName)
         {
-            world.RemoveComponent<ActiveDrag>(entity);
-            Console.WriteLine($"[Action] Ended drag.");
+            var world = Object.ECSWorld;
+            foreach (var e in world.Query<ActiveDrag>())
+                if (world.GetComponent<ActiveDrag>(e).ParentName == parentName)
+                    world.RemoveComponent<ActiveDrag>(e);
         }
 
-        private static void AdjustEdge(ref TransformComponent fTrans,
-            (Vector3 pos, Vector3 scale) orig, TransformComponent targetTrans,
-            (Vector3 pos, Vector3 scale) targetOrig, string moveEdge,
-            (float min, float max) limits)
+        private static void AdjustEdgeFromParent(ref TransformComponent follower,
+            (Vector3 pos, Vector3 scale) followerOrig,
+            TransformComponent parentTrans,
+            (Vector3 pos, Vector3 scale) parentOrig,
+            string edge,
+            (float min, float max) limits,
+            float fixedEdgePosition)
         {
-            float movingEdge, fixedEdge, newSize, newCenter;
-            bool isXAxis = (moveEdge == "left" || moveEdge == "right");
-            bool movingRight = (moveEdge == "left" || moveEdge == "top");
+            bool isHorizontal = (edge == "left" || edge == "right");
+            bool attachedToRightSide = (edge == "left");
 
-            if (isXAxis)
+            if (isHorizontal)
             {
-                movingEdge = movingRight
-                    ? targetTrans.Position.X + targetTrans.Scale.X / 2f
-                    : targetTrans.Position.X - targetTrans.Scale.X / 2f;
-                fixedEdge = movingRight
-                    ? orig.pos.X + orig.scale.X / 2f
-                    : orig.pos.X - orig.scale.X / 2f;
-                newSize = movingRight ? fixedEdge - movingEdge : movingEdge - fixedEdge;
-                newCenter = (movingEdge + fixedEdge) / 2f;
-                
-                // Apply min/max to the position
-                if (!float.IsNaN(limits.min))
-                    newCenter = Math.Max(newCenter, limits.min);
-                if (!float.IsNaN(limits.max))
-                    newCenter = Math.Min(newCenter, limits.max);
-                    
-                fTrans.Position.X = newCenter;
-                fTrans.Scale.X = Math.Max(newSize, 1f);
+                float parentAttachEdge = attachedToRightSide
+                    ? parentTrans.Position.X + parentTrans.Scale.X / 2f
+                    : parentTrans.Position.X - parentTrans.Scale.X / 2f;
+
+                float newSize = attachedToRightSide
+                    ? fixedEdgePosition - parentAttachEdge
+                    : parentAttachEdge - fixedEdgePosition;
+
+                float newCenter = (parentAttachEdge + fixedEdgePosition) / 2f;
+
+                newCenter = Clamp(newCenter, limits.min, limits.max);
+                follower.Position.X = newCenter;
+                follower.Scale.X = Math.Max(newSize, 1f);
             }
             else
             {
-                movingEdge = movingRight
-                    ? targetTrans.Position.Y + targetTrans.Scale.Y / 2f
-                    : targetTrans.Position.Y - targetTrans.Scale.Y / 2f;
-                fixedEdge = movingRight
-                    ? orig.pos.Y + orig.scale.Y / 2f
-                    : orig.pos.Y - orig.scale.Y / 2f;
-                newSize = movingRight ? fixedEdge - movingEdge : movingEdge - fixedEdge;
-                newCenter = (movingEdge + fixedEdge) / 2f;
-                
-                // Apply min/max to the position
-                if (!float.IsNaN(limits.min))
-                    newCenter = Math.Max(newCenter, limits.min);
-                if (!float.IsNaN(limits.max))
-                    newCenter = Math.Min(newCenter, limits.max);
-                    
-                fTrans.Position.Y = newCenter;
-                fTrans.Scale.Y = Math.Max(newSize, 1f);
+                bool attachedToBottomSide = (edge == "top");
+
+                float parentAttachEdge = attachedToBottomSide
+                    ? parentTrans.Position.Y + parentTrans.Scale.Y / 2f
+                    : parentTrans.Position.Y - parentTrans.Scale.Y / 2f;
+
+                float newSize = attachedToBottomSide
+                    ? fixedEdgePosition - parentAttachEdge
+                    : parentAttachEdge - fixedEdgePosition;
+
+                float newCenter = (parentAttachEdge + fixedEdgePosition) / 2f;
+
+                newCenter = Clamp(newCenter, limits.min, limits.max);
+                follower.Position.Y = newCenter;
+                follower.Scale.Y = Math.Max(newSize, 1f);
             }
+        }
+
+        private static float Clamp(float value, float min, float max)
+        {
+            if (!float.IsNaN(min)) value = Math.Max(value, min);
+            if (!float.IsNaN(max)) value = Math.Min(value, max);
+            return value;
         }
     }
 }
