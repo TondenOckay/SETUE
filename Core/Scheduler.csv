@@ -33,3 +33,4 @@ SETUE.Systems.Texts,Update,A,UI,2,0.013,0,1,0
 SETUE.Scene3D,Update,A,Render,1,0.014,0,1,0
 SETUE.Scene.Scene2D,Update,A,Render,2,0.015,0,1,0
 SETUE.Vulkan,DoDrawFrame,A,Render,3,0.019,0,1,0
+SETUE.Core.ECSCleanup,Execute,A,Core,99,0.099,0,1,0

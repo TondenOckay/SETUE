@@ -55,14 +55,24 @@ namespace SETUE
                     }
                 }
 
+                // Allow OS close button to work
                 if ((SDL.EventType)ev.Type == SDL.EventType.Quit)
+                {
+                    Console.WriteLine("[Window] SDL_QUIT received. Exiting...");
                     _shouldQuit = true;
+                }
+
+                // Also allow Escape key to quit
+                if (ev.Type == (uint)SDL.EventType.KeyDown && ev.Key.Scancode == SDL.Scancode.Escape)
+                {
+                    Console.WriteLine("[Window] Escape pressed. Exiting...");
+                    _shouldQuit = true;
+                }
             }
 
             if (_shouldQuit)
             {
-                Console.WriteLine("[Window] Quit requested, exiting...");
-                Environment.Exit(0);
+                MasterClock.Stop();
             }
         }
     }

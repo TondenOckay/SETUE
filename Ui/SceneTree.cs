@@ -2,21 +2,24 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using SETUE.Core;
 using SETUE.ECS;
 
 namespace SETUE.UI
 {
     public static class SceneTree
     {
-        private static string _panelId = "";
+        private static int _panelId;
         private static float _rowHeight = 20f;
         private static float _paddingX = 10f;
         private static float _paddingY = 10f;
         private static float _rowR = 0.2f, _rowG = 0.2f, _rowB = 0.2f;
         private static float _selR = 0.3f, _selG = 0.6f, _selB = 0.9f;
-        private static string _fontId = "default";
+        private static int _fontId;
         private static float _textR = 1f, _textG = 1f, _textB = 1f;
         private static float _indentWidth = 20f;
+        private static int _rectPipelineId;
+        private static int _stPrefixId;
 
         public static void Load()
         {
@@ -30,7 +33,7 @@ namespace SETUE.UI
             for (int i = 0; i < headers.Length && i < vals.Length; i++)
                 settings[headers[i].Trim()] = vals[i].Trim();
 
-            if (settings.TryGetValue("panel_id", out var pid)) _panelId = pid;
+            if (settings.TryGetValue("panel_id", out var pid)) _panelId = StringRegistry.GetOrAdd(pid);
             if (settings.TryGetValue("row_height", out var rh)) _rowHeight = float.Parse(rh);
             if (settings.TryGetValue("padding_x", out var px)) _paddingX = float.Parse(px);
             if (settings.TryGetValue("padding_y", out var py)) _paddingY = float.Parse(py);
@@ -40,19 +43,23 @@ namespace SETUE.UI
             if (settings.TryGetValue("selected_r", out var sr)) _selR = float.Parse(sr);
             if (settings.TryGetValue("selected_g", out var sg)) _selG = float.Parse(sg);
             if (settings.TryGetValue("selected_b", out var sb)) _selB = float.Parse(sb);
-            if (settings.TryGetValue("font_id", out var fi)) _fontId = fi;
+            if (settings.TryGetValue("font_id", out var fi)) _fontId = StringRegistry.GetOrAdd(fi);
             if (settings.TryGetValue("text_r", out var txr)) _textR = float.Parse(txr);
             if (settings.TryGetValue("text_g", out var txg)) _textG = float.Parse(txg);
             if (settings.TryGetValue("text_b", out var txb)) _textB = float.Parse(txb);
             if (settings.TryGetValue("indent_width", out var iw)) _indentWidth = float.Parse(iw);
-            Console.WriteLine($"[SceneTree] Loaded settings panel={_panelId} rowH={_rowHeight}");
+
+            _rectPipelineId = StringRegistry.GetOrAdd("rect_pipeline");
+            _stPrefixId = StringRegistry.GetOrAdd("_st_");
+
+            Console.WriteLine($"[SceneTree] Loaded settings panel={StringRegistry.GetString(_panelId)} rowH={_rowHeight}");
         }
 
         public static void Update()
         {
-            if (string.IsNullOrEmpty(_panelId)) return;
+            if (_panelId == 0) return;
 
-            var world = Object.ECSWorld; // Changed from ObjectLoader
+            var world = Object.ECSWorld;
 
             Entity? containerEntity = null;
             TransformComponent containerTransform = default;
@@ -67,7 +74,7 @@ namespace SETUE.UI
             }
             if (containerEntity == null)
             {
-                Console.WriteLine($"[SceneTree] Container panel '{_panelId}' not found in ECS");
+                Console.WriteLine($"[SceneTree] Container panel '{StringRegistry.GetString(_panelId)}' not found in ECS");
                 return;
             }
 
@@ -85,13 +92,15 @@ namespace SETUE.UI
             foreach (var e in world.Query<PanelComponent>())
             {
                 var p = world.GetComponent<PanelComponent>(e);
-                if (p.Id.StartsWith("_st_"))
+                string idStr = StringRegistry.GetString(p.Id);
+                if (idStr.StartsWith("_st_"))
                     toRemovePanels.Add(e);
             }
             foreach (var e in world.Query<TextComponent>())
             {
                 var t = world.GetComponent<TextComponent>(e);
-                if (t.Id.StartsWith("_st_txt_"))
+                string idStr = StringRegistry.GetString(t.Id);
+                if (idStr.StartsWith("_st_txt_"))
                     toRemoveTexts.Add(e);
             }
             foreach (var e in toRemovePanels) world.DestroyEntity(e);
@@ -107,8 +116,10 @@ namespace SETUE.UI
                 float indent = _paddingX + depth * _indentWidth;
                 bool isSelected = world.HasComponent<SelectedComponent>(entity);
 
-                string rowId = "_st_" + entity.Id;
-                string txtId = "_st_txt_" + entity.Id;
+                string rowIdStr = $"_st_{entity.Index}";
+                string txtIdStr = $"_st_txt_{entity.Index}";
+                int rowId = StringRegistry.GetOrAdd(rowIdStr);
+                int txtId = StringRegistry.GetOrAdd(txtIdStr);
 
                 Entity rowEntity = world.CreateEntity();
                 world.AddComponent(rowEntity, new TransformComponent
@@ -128,7 +139,7 @@ namespace SETUE.UI
                 });
                 world.AddComponent(rowEntity, new MaterialComponent
                 {
-                    PipelineId = "rect_pipeline",
+                    PipelineId = _rectPipelineId,
                     Color = isSelected ? new Vector4(_selR, _selG, _selB, 1f) : new Vector4(_rowR, _rowG, _rowB, 1f)
                 });
 
@@ -142,11 +153,11 @@ namespace SETUE.UI
                 world.AddComponent(textEntity, new TextComponent
                 {
                     Id = txtId,
-                    Content = entityName,
+                    ContentId = StringRegistry.GetOrAdd(entityName),
                     FontId = _fontId,
                     FontSize = _rowHeight * 0.6f,
                     Color = new Vector4(_textR, _textG, _textB, 1f),
-                    Align = "left",
+                    Align = StringRegistry.GetOrAdd("left"),
                     Rotation = 0,
                     PanelId = rowId
                 });

@@ -2,16 +2,41 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Numerics;
+using SETUE.Core;
 using SETUE.ECS;
 
 namespace SETUE.Systems
 {
     public static class Texts
     {
-        private static Dictionary<string, float> _panelNextYOffset = new();
+        private static Dictionary<int, float> _panelNextYOffset = new();
+
+        // Pre-registered common string IDs
+        private static int _alignLeftId;
+        private static int _alignCenterId;
+        private static int _alignRightId;
+        private static int _valignTopId;
+        private static int _valignMiddleId;
+        private static int _valignBottomId;
+        private static int _sourcePositionId;
+        private static int _sourceRotationId;
+        private static int _sourceScaleId;
+        private static int _defaultFontId;
 
         public static void Load()
         {
+            // Pre-register common strings
+            _alignLeftId = StringRegistry.GetOrAdd("left");
+            _alignCenterId = StringRegistry.GetOrAdd("center");
+            _alignRightId = StringRegistry.GetOrAdd("right");
+            _valignTopId = StringRegistry.GetOrAdd("top");
+            _valignMiddleId = StringRegistry.GetOrAdd("middle");
+            _valignBottomId = StringRegistry.GetOrAdd("bottom");
+            _sourcePositionId = StringRegistry.GetOrAdd("position");
+            _sourceRotationId = StringRegistry.GetOrAdd("rotation");
+            _sourceScaleId = StringRegistry.GetOrAdd("scale");
+            _defaultFontId = StringRegistry.GetOrAdd("default");
+
             string path = "Ui/Text.csv";
             if (!File.Exists(path))
             {
@@ -51,21 +76,21 @@ namespace SETUE.Systems
 
                 string Get(int idx) => idx >= 0 && idx < parts.Length ? parts[idx].Trim() : "";
 
-                string id = Get(iId);
-                string panelId = Get(iPanelId);
-                string content = Get(iText);
-                string fontId = string.IsNullOrEmpty(Get(iFontId)) ? "default" : Get(iFontId);
-                string align = string.IsNullOrEmpty(Get(iAlign)) ? "center" : Get(iAlign);
+                string idStr = Get(iId);
+                string panelIdStr = Get(iPanelId);
+                string contentStr = Get(iText);
+                string fontIdStr = string.IsNullOrEmpty(Get(iFontId)) ? "default" : Get(iFontId);
+                string alignStr = string.IsNullOrEmpty(Get(iAlign)) ? "center" : Get(iAlign);
                 int layer = int.TryParse(Get(iLayer), out var l) ? l : 10;
                 float rotation = float.TryParse(Get(iRotation), out var rot) ? rot : 0f;
-                string source = Get(iSource);
-                string prefix = Get(iPrefix);
+                string sourceStr = Get(iSource);
+                string prefixStr = Get(iPrefix);
 
                 float padLeft = float.TryParse(Get(iPadLeft), out var pl) ? pl : 10f;
                 float padTop = float.TryParse(Get(iPadTop), out var pt) ? pt : 10f;
                 float lineHeight = float.TryParse(Get(iLineHeight), out var lh) ? lh : 20f;
-                string valign = Get(iVAlign);
-                if (string.IsNullOrEmpty(valign)) valign = "top";
+                string valignStr = Get(iVAlign);
+                if (string.IsNullOrEmpty(valignStr)) valignStr = "top";
 
                 Vector4 color = new Vector4(1, 1, 1, 1);
                 string cid = Get(iColorId);
@@ -78,21 +103,21 @@ namespace SETUE.Systems
                 Entity e = world.CreateEntity();
                 world.AddComponent(e, new TextComponent
                 {
-                    Id = id,
-                    Content = content,
-                    FontId = fontId,
+                    Id = StringRegistry.GetOrAdd(idStr),
+                    ContentId = StringRegistry.GetOrAdd(contentStr),
+                    FontId = StringRegistry.GetOrAdd(fontIdStr),
                     FontSize = 16f,
                     Color = color,
-                    Align = align,
+                    Align = StringRegistry.GetOrAdd(alignStr),
                     Rotation = rotation,
                     Layer = layer,
-                    Source = source,
-                    Prefix = prefix,
-                    PanelId = panelId,
+                    Source = StringRegistry.GetOrAdd(sourceStr),
+                    Prefix = StringRegistry.GetOrAdd(prefixStr),
+                    PanelId = StringRegistry.GetOrAdd(panelIdStr),
                     PadLeft = padLeft,
                     PadTop = padTop,
                     LineHeight = lineHeight,
-                    VAlign = valign
+                    VAlign = StringRegistry.GetOrAdd(valignStr)
                 });
 
                 world.AddComponent(e, new TransformComponent
@@ -116,11 +141,11 @@ namespace SETUE.Systems
                 break;
             }
 
-            var panelTexts = new Dictionary<string, List<Entity>>();
+            var panelTexts = new Dictionary<int, List<Entity>>();
             foreach (var e in world.Query<TextComponent>())
             {
                 var text = world.GetComponent<TextComponent>(e);
-                if (!string.IsNullOrEmpty(text.PanelId))
+                if (text.PanelId != 0)
                 {
                     if (!panelTexts.ContainsKey(text.PanelId))
                         panelTexts[text.PanelId] = new List<Entity>();
@@ -132,7 +157,7 @@ namespace SETUE.Systems
 
             foreach (var kvp in panelTexts)
             {
-                string panelId = kvp.Key;
+                int panelId = kvp.Key;
                 var entities = kvp.Value;
 
                 Entity? panelEntity = null;
@@ -157,7 +182,6 @@ namespace SETUE.Systems
                 float panelWidth = panelScale.X;
                 float panelHeight = panelScale.Y;
 
-                // Sort by layer
                 entities.Sort((a, b) =>
                 {
                     var ta = world.GetComponent<TextComponent>(a);
@@ -166,7 +190,7 @@ namespace SETUE.Systems
                 });
 
                 var firstText = world.GetComponent<TextComponent>(entities[0]);
-                string vAlign = firstText.VAlign;
+                int vAlignId = firstText.VAlign;
 
                 bool isVertical = Math.Abs(firstText.Rotation) == 90 || Math.Abs(firstText.Rotation) == 270;
 
@@ -177,24 +201,23 @@ namespace SETUE.Systems
                 foreach (var e in entities)
                 {
                     var t = world.GetComponent<TextComponent>(e);
-                    var font = SETUE.UI.Fonts.Get(t.FontId);
+                    string fontIdStr = StringRegistry.GetString(t.FontId);
+                    var font = SETUE.UI.Fonts.Get(fontIdStr);
                     if (font == null) continue;
 
                     float ascent = font.Ascent;
                     float descent = 0f;
-
-                    // Try to get Descent if available, otherwise estimate
                     var descentProp = font.GetType().GetProperty("Descent");
                     if (descentProp != null)
                         descent = (float)descentProp.GetValue(font);
                     else
-                        descent = ascent * 0.25f; // reasonable fallback for Latin fonts
+                        descent = ascent * 0.25f;
 
+                    string content = StringRegistry.GetString(t.ContentId);
                     if (isVertical)
                     {
-                        // Vertical text: visual height = string width
                         float stringWidth = 0f;
-                        foreach (char c in t.Content)
+                        foreach (char c in content)
                             if (font.Glyphs.TryGetValue(c, out var g))
                                 stringWidth += g.AdvanceX;
 
@@ -215,7 +238,6 @@ namespace SETUE.Systems
                     }
                     else
                     {
-                        // Horizontal text
                         if (firstLine)
                         {
                             visualTop = -ascent;
@@ -236,19 +258,18 @@ namespace SETUE.Systems
                 float visualHeight = visualBottom - visualTop;
 
                 float startY;
-                string vAlignClean = vAlign?.Trim() ?? "";
-                if (string.Equals(vAlignClean, "middle", StringComparison.OrdinalIgnoreCase))
+                if (vAlignId == _valignMiddleId)
                 {
                     float blockTop = panelTop + (panelHeight - visualHeight) * 0.5f;
                     startY = blockTop - visualTop;
-                    Console.WriteLine($"[Texts] Panel '{panelId}' MIDDLE: visualHeight={visualHeight:F1}, blockTop={blockTop:F1}, startY={startY:F1}");
+                    Console.WriteLine($"[Texts] Panel '{StringRegistry.GetString(panelId)}' MIDDLE: visualHeight={visualHeight:F1}, blockTop={blockTop:F1}, startY={startY:F1}");
                 }
-                else if (string.Equals(vAlignClean, "bottom", StringComparison.OrdinalIgnoreCase))
+                else if (vAlignId == _valignBottomId)
                 {
                     float blockTop = panelTop + panelHeight - visualHeight - firstText.PadTop;
                     startY = blockTop - visualTop;
                 }
-                else // "top"
+                else // top
                 {
                     startY = panelTop + firstText.PadTop - visualTop;
                 }
@@ -259,45 +280,40 @@ namespace SETUE.Systems
                     var text = world.GetComponent<TextComponent>(e);
                     var transform = world.GetComponent<TransformComponent>(e);
 
-                    if (!string.IsNullOrEmpty(text.Source))
+                    if (text.Source != 0)
                     {
-                        string newContent = text.Content;
+                        string newContent = StringRegistry.GetString(text.ContentId);
                         if (selectedEntity != null && world.HasComponent<TransformComponent>(selectedEntity.Value))
                         {
                             var selTrans = world.GetComponent<TransformComponent>(selectedEntity.Value);
-                            switch (text.Source)
-                            {
-                                case "position":
-                                    newContent = $"{text.Prefix} {selTrans.Position.X:F3}, {selTrans.Position.Y:F3}, {selTrans.Position.Z:F3}";
-                                    break;
-                                case "rotation":
-                                    newContent = $"{text.Prefix} {selTrans.Rotation.X:F2}, {selTrans.Rotation.Y:F2}, {selTrans.Rotation.Z:F2}, {selTrans.Rotation.W:F2}";
-                                    break;
-                                case "scale":
-                                    newContent = $"{text.Prefix} {selTrans.Scale.X:F3}, {selTrans.Scale.Y:F3}, {selTrans.Scale.Z:F3}";
-                                    break;
-                                default:
-                                    newContent = $"{text.Prefix} ---";
-                                    break;
-                            }
+                            string prefix = StringRegistry.GetString(text.Prefix);
+                            if (text.Source == _sourcePositionId)
+                                newContent = $"{prefix} {selTrans.Position.X:F3}, {selTrans.Position.Y:F3}, {selTrans.Position.Z:F3}";
+                            else if (text.Source == _sourceRotationId)
+                                newContent = $"{prefix} {selTrans.Rotation.X:F2}, {selTrans.Rotation.Y:F2}, {selTrans.Rotation.Z:F2}, {selTrans.Rotation.W:F2}";
+                            else if (text.Source == _sourceScaleId)
+                                newContent = $"{prefix} {selTrans.Scale.X:F3}, {selTrans.Scale.Y:F3}, {selTrans.Scale.Z:F3}";
+                            else
+                                newContent = $"{prefix} ---";
                         }
                         else
                         {
-                            newContent = $"{text.Prefix} ---";
+                            newContent = $"{StringRegistry.GetString(text.Prefix)} ---";
                         }
 
-                        if (newContent != text.Content)
+                        int newContentId = StringRegistry.GetOrAdd(newContent);
+                        if (newContentId != text.ContentId)
                         {
-                            text.Content = newContent;
+                            text.ContentId = newContentId;
                             world.SetComponent(e, text);
                         }
                     }
 
                     float y = startY + currentBaselineOffset;
                     float x = panelLeft + text.PadLeft;
-                    if (text.Align == "center")
+                    if (text.Align == _alignCenterId)
                         x = panelLeft + panelWidth * 0.5f;
-                    else if (text.Align == "right")
+                    else if (text.Align == _alignRightId)
                         x = panelLeft + panelWidth - text.PadLeft;
 
                     transform.Position = new Vector3(x, y, 0);

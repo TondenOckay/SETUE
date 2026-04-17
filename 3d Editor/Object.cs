@@ -2,12 +2,13 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using SETUE.Core;
 using SETUE.ECS;
 using SETUE.RenderEngine;
 
 namespace SETUE
 {
-    public static class Object  // Renamed from ObjectLoader
+    public static class Object
     {
         public static World ECSWorld = new World();
 
@@ -26,7 +27,7 @@ namespace SETUE
                 if (parts.Length < 17) continue;
 
                 string id = parts[0].Trim();
-                string meshId = parts[1].Trim();
+                string meshIdStr = parts[1].Trim();
                 Vector3 pos = new Vector3(
                     float.Parse(parts[2]), float.Parse(parts[3]), float.Parse(parts[4]));
                 float size = float.Parse(parts[5]);
@@ -38,12 +39,12 @@ namespace SETUE
                     float.Parse(parts[12]), float.Parse(parts[13]), float.Parse(parts[14]));
                 bool visible = bool.Parse(parts[15]);
                 int layer = int.Parse(parts[16]);
-                string pipelineId = parts.Length > 17 ? parts[17].Trim() : "mesh_pipeline_back";
+                string pipelineIdStr = parts.Length > 17 ? parts[17].Trim() : "mesh_pipeline_back";
                 string parent = parts.Length > 18 ? parts[18].Trim() : "";
 
-                if (!MeshBuffer.GetMeshData(meshId, out var meshData))
+                if (!MeshBuffer.GetMeshData(meshIdStr, out var meshData))
                 {
-                    Console.WriteLine($"[Object] Mesh '{meshId}' not found for entity {id}");
+                    Console.WriteLine($"[Object] Mesh '{meshIdStr}' not found for entity {id}");
                     continue;
                 }
 
@@ -65,9 +66,9 @@ namespace SETUE
 
                 ECSWorld.AddComponent(e, new MeshComponent
                 {
-                    MeshId = meshId,
-                    VertexBuffer = (IntPtr)meshData.VertexBuffer.Handle,
-                    IndexBuffer = (IntPtr)meshData.IndexBuffer.Handle,
+                    MeshId = StringRegistry.GetOrAdd(meshIdStr),
+                    VertexBuffer = meshData.VertexBuffer.Handle,
+                    IndexBuffer = meshData.IndexBuffer.Handle,
                     IndexCount = meshData.IndexCount,
                     VertexCount = meshData.VertexCount,
                     VertexStride = meshData.VertexStride
@@ -75,13 +76,13 @@ namespace SETUE
 
                 ECSWorld.AddComponent(e, new MaterialComponent
                 {
-                    PipelineId = pipelineId,
+                    PipelineId = StringRegistry.GetOrAdd(pipelineIdStr),
                     Color = new Vector4(color.X, color.Y, color.Z, 1f)
                 });
 
                 ECSWorld.AddComponent(e, new LayerComponent { Layer = layer });
 
-                Console.WriteLine($"[Object] Created entity {e} ({id}) with mesh {meshId}");
+                Console.WriteLine($"[Object] Created entity {e} ({id}) with mesh {meshIdStr}");
             }
 
             int count = ECSWorld.Query<TransformComponent, MeshComponent>().Count();

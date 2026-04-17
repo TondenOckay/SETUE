@@ -9,17 +9,11 @@ namespace SETUE.Controls
 {
     public static class Input
     {
-        // Accumulate all MouseMotion deltas in a frame rather than overwriting.
         private static Vector2 _mouseDeltaAccum = Vector2.Zero;
         public static Vector2 MouseDelta  => _mouseDeltaAccum;
         public static float   ScrollDelta { get; private set; }
         public static Vector2 MousePos    { get; private set; }
 
-        // FIX: Support multiple bindings per action name.
-        // Old code used Dictionary<string, string> which silently overwrote
-        // duplicate action names (e.g. rotate_left bound to both Kp4 and Left
-        // meant Left always won and Kp4 was lost).
-        // Now each action maps to a LIST of (input, modifier) pairs.
         static readonly Dictionary<string, List<(string input, string modifier)>> _actionBindings = new();
         static readonly HashSet<string> _actionEnabled = new();
 
@@ -82,7 +76,6 @@ namespace SETUE.Controls
                 string input    = idxInput    >= 0 && p.Length > idxInput    ? p[idxInput].Trim()    : "";
                 string modifier = idxModifier >= 0 && p.Length > idxModifier ? p[idxModifier].Trim() : "";
 
-                // FIX: Append to list instead of overwriting.
                 if (!_actionBindings.TryGetValue(action, out var list))
                 {
                     list = new List<(string, string)>();
@@ -161,9 +154,6 @@ namespace SETUE.Controls
             }
         }
 
-        // Returns true if the given modifier is claimed by another binding
-        // on the same raw input key — meaning holding that modifier should
-        // block the no-modifier variant of that key.
         private static bool IsModifierConflicting(string input, string heldMod)
         {
             foreach (var kv in _actionBindings)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using Silk.NET.Vulkan;
+using SETUE.Core;
 using SETUE.ECS;
 using SETUE.RenderEngine;
 using SETUE.Systems;
@@ -112,7 +113,6 @@ namespace SETUE.Scene
                             float width  = transform.Scale.X;
                             float height = transform.Scale.Y;
 
-                            // Original NDC mapping (no Y flip)
                             float x = (left / sw) * 2f - 1f;
                             float y = (top / sh) * 2f - 1f;
                             float w = (width / sw) * 2f;
@@ -130,7 +130,7 @@ namespace SETUE.Scene
                                 {
                                     Transform = panelTransform,
                                     Color = material.Color,
-                                    PipelineId = material.PipelineId,
+                                    PipelineId = StringRegistry.GetString(material.PipelineId), // PipelineId is now int
                                     VertexBuffer = vbuf,
                                     IndexBuffer = ibuf,
                                     IndexCount = idxCount,
@@ -140,7 +140,7 @@ namespace SETUE.Scene
                             }
                             else
                             {
-                                Console.WriteLine($"[Scene2D] Mesh '{meshId}' not found for panel '{panel.Id}'");
+                                Console.WriteLine($"[Scene2D] Mesh '{meshId}' not found for panel '{StringRegistry.GetString(panel.Id)}'");
                             }
                         }
                         break;
@@ -148,8 +148,9 @@ namespace SETUE.Scene
                     case "texts":
                         foreach (var (e, text, transform) in world.Query<TextComponent, TransformComponent>())
                         {
-                            string fontId = string.IsNullOrEmpty(text.FontId) ? "default" : text.FontId;
-                            var font = SETUE.UI.Fonts.Get(fontId);
+                            string fontIdStr = StringRegistry.GetString(text.FontId);
+                            if (string.IsNullOrEmpty(fontIdStr)) fontIdStr = "default";
+                            var font = SETUE.UI.Fonts.Get(fontIdStr);
                             if (font == null) continue;
 
                             BuildTextBuffers(text, transform, font, sw, sh, out var vbuf, out var ibuf, out uint idxCount);
@@ -165,7 +166,7 @@ namespace SETUE.Scene
                                     IndexCount = idxCount,
                                     Order = rule.Order + text.Layer,
                                     IsText = true,
-                                    FontId = fontId
+                                    FontId = fontIdStr
                                 });
                             }
                         }
@@ -180,7 +181,8 @@ namespace SETUE.Scene
             out VkBuffer vbuf, out VkBuffer ibuf, out uint indexCount)
         {
             vbuf = default; ibuf = default; indexCount = 0;
-            if (string.IsNullOrEmpty(text.Content)) return;
+            string content = StringRegistry.GetString(text.ContentId);
+            if (string.IsNullOrEmpty(content)) return;
 
             List<float> verts = new();
             List<uint> indices = new();
@@ -189,51 +191,46 @@ namespace SETUE.Scene
             float startX = transform.Position.X;
             float startY = transform.Position.Y;
 
-            // Compute total width of the string
             float totalWidth = 0f;
-            foreach (char c in text.Content)
+            foreach (char c in content)
                 if (font.Glyphs.TryGetValue(c, out var g))
                     totalWidth += g.AdvanceX;
 
-            // Font metrics
             float ascent = font.Ascent;
             float descent = 0f;
-            // Try to get Descent via reflection, or use fallback
             var descentProp = font.GetType().GetProperty("Descent");
             if (descentProp != null)
                 descent = (float)descentProp.GetValue(font);
             else
-                descent = ascent * 0.25f; // reasonable estimate for Latin fonts
+                descent = ascent * 0.25f;
 
             float visualHeight = ascent + descent;
-            float visualTop = -ascent;      // relative to baseline
+            float visualTop = -ascent;
             float visualBottom = descent;
 
-            // Determine visual center offset from the anchor point (startX, startY)
             float centerOffsetX = 0f;
-            float centerOffsetY = (visualTop + visualBottom) * 0.5f; // e.g., (-ascent + descent)/2
+            float centerOffsetY = (visualTop + visualBottom) * 0.5f;
 
-            if (text.Align == "left")
+            string alignStr = StringRegistry.GetString(text.Align);
+            if (alignStr == "left")
                 centerOffsetX = totalWidth * 0.5f;
-            else if (text.Align == "center")
+            else if (alignStr == "center")
                 centerOffsetX = 0f;
-            else if (text.Align == "right")
+            else if (alignStr == "right")
                 centerOffsetX = -totalWidth * 0.5f;
 
-            // The pivot for rotation is the visual center
             float pivotX = startX + centerOffsetX;
             float pivotY = startY + centerOffsetY;
 
-            // Baseline starting position for glyph placement (relative to pivot)
-            float baseX = pivotX - totalWidth * 0.5f; // always start at left of string
-            float baseY = pivotY - centerOffsetY;     // baseline = pivotY - visualCenterY
+            float baseX = pivotX - totalWidth * 0.5f;
+            float baseY = pivotY - centerOffsetY;
 
             float penX = baseX;
 
             float cosR = MathF.Cos(text.Rotation * MathF.PI / 180f);
             float sinR = MathF.Sin(text.Rotation * MathF.PI / 180f);
 
-            foreach (char c in text.Content)
+            foreach (char c in content)
             {
                 if (!font.Glyphs.TryGetValue(c, out var glyph))
                 {
@@ -241,7 +238,6 @@ namespace SETUE.Scene
                     continue;
                 }
 
-                // Glyph quad in local (unrotated) space
                 float x0 = penX;
                 float y0 = baseY - ascent;
                 float x1 = x0 + glyph.Width;
@@ -258,14 +254,12 @@ namespace SETUE.Scene
                 }
                 else
                 {
-                    // Rotate around the visual center (pivot)
                     (rx0, ry0) = RotatePoint(x0, y0, pivotX, pivotY, cosR, sinR);
                     (rx1, ry1) = RotatePoint(x1, y0, pivotX, pivotY, cosR, sinR);
                     (rx2, ry2) = RotatePoint(x1, y1, pivotX, pivotY, cosR, sinR);
                     (rx3, ry3) = RotatePoint(x0, y1, pivotX, pivotY, cosR, sinR);
                 }
 
-                // NDC conversion (no Y flip)
                 float nx0 = (rx0 / sw) * 2f - 1f;
                 float ny0 = (ry0 / sh) * 2f - 1f;
                 float nx1 = (rx1 / sw) * 2f - 1f;
@@ -275,8 +269,6 @@ namespace SETUE.Scene
                 float nx3 = (rx3 / sw) * 2f - 1f;
                 float ny3 = (ry3 / sh) * 2f - 1f;
 
-                // Vertex format: [pos.x, pos.y, pos.z, norm.x, norm.y, norm.z, uv.u, uv.v]
-                // The shader uses inNormal.xy as UVs
                 verts.AddRange(new[] {
                     nx0, ny0, 0f, glyph.U0, glyph.V0, 0f, 0f, 0f,
                     nx1, ny1, 0f, glyph.U1, glyph.V0, 0f, 0f, 0f,
@@ -333,4 +325,3 @@ namespace SETUE.Scene
         }
     }
 }
-

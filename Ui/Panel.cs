@@ -10,7 +10,8 @@ namespace SETUE.Systems
 {
     public class Panel
     {
-        public string Id { get; set; } = "";
+        public int Id { get; set; }           // Registry ID
+        public string IdString { get; set; } = ""; // For debugging
         public float X { get; set; }
         public float Y { get; set; }
         public float Width { get; set; }
@@ -20,8 +21,10 @@ namespace SETUE.Systems
         public float B { get; set; }
         public bool Visible { get; set; }
         public int Layer { get; set; }
-        public string Text { get; set; } = "";
-        public string FontId { get; set; } = "default";
+        public int TextId { get; set; }       // Registry ID
+        public string TextIdString { get; set; } = "";
+        public int FontId { get; set; }       // Registry ID
+        public string FontIdString { get; set; } = "default";
         public bool Clickable { get; set; }
         public string TextAlign { get; set; } = "center";
         public float Alpha { get; set; } = 1f;
@@ -34,19 +37,20 @@ namespace SETUE.Systems
     public static class Panels
     {
         private static List<Panel> _panels = new();
-        private static Dictionary<string, Panel> _panelDict = new();
+        private static Dictionary<int, Panel> _panelDict = new();
         private static int _windowWidth = 1920;
         private static int _windowHeight = 1080;
 
-        public static IReadOnlyDictionary<string, Panel> All => _panelDict;
+        public static IReadOnlyDictionary<int, Panel> All => _panelDict;
         public static IEnumerable<Panel> Sorted => _panels.OrderBy(p => p.Layer);
 
         public static void Add(Panel p) { _panels.Add(p); _panelDict[p.Id] = p; }
-        public static void Remove(string id) { _panels.RemoveAll(p => p.Id == id); _panelDict.Remove(id); }
+        public static void Remove(int id) { _panels.RemoveAll(p => p.Id == id); _panelDict.Remove(id); }
 
         public static void Load()
         {
             _panels.Clear();
+            _panelDict.Clear();
             string path = "Ui/Panel.csv";
             if (!File.Exists(path)) { Console.WriteLine($"[Panels] File not found: {path}"); return; }
 
@@ -81,9 +85,14 @@ namespace SETUE.Systems
 
                 string Get(int idx) => idx >= 0 && idx < p.Length ? p[idx].Trim() : "";
 
+                string idStr = Get(iId);
+                string textStr = Get(iText);
+                string fontIdStr = string.IsNullOrEmpty(Get(iFontId)) ? "default" : Get(iFontId);
+
                 var panel = new Panel
                 {
-                    Id = Get(iId),
+                    Id = StringRegistry.GetOrAdd(idStr),
+                    IdString = idStr,
                     X = float.TryParse(Get(iLeft), out float l) ? l : 0,
                     Width = float.TryParse(Get(iRight), out float r) ? r - (float.TryParse(Get(iLeft), out float l2) ? l2 : 0) : 0,
                     Y = float.TryParse(Get(iTop), out float t) ? t : 0,
@@ -93,8 +102,10 @@ namespace SETUE.Systems
                     B = float.Parse(Get(iB)),
                     Visible = bool.Parse(Get(iVis)),
                     Layer = int.Parse(Get(iLayer)),
-                    Text = Get(iText),
-                    FontId = string.IsNullOrEmpty(Get(iFontId)) ? "default" : Get(iFontId),
+                    TextId = StringRegistry.GetOrAdd(textStr),
+                    TextIdString = textStr,
+                    FontId = StringRegistry.GetOrAdd(fontIdStr),
+                    FontIdString = fontIdStr,
                     Clickable = Get(iClickable) == "true",
                     TextR = float.TryParse(Get(iTextR), out var tr) ? tr : 1f,
                     TextG = float.TryParse(Get(iTextG), out var tg) ? tg : 1f,
@@ -108,8 +119,9 @@ namespace SETUE.Systems
                 if (!string.IsNullOrEmpty(tcid)) { var c = Colors.Get(tcid); panel.TextR = c.R; panel.TextG = c.G; panel.TextB = c.B; }
 
                 _panels.Add(panel);
+                _panelDict[panel.Id] = panel;
 
-                var world = Object.ECSWorld; // Changed from ObjectLoader
+                var world = Object.ECSWorld;
                 var e = world.CreateEntity();
                 world.AddComponent(e, new TransformComponent
                 {
@@ -124,16 +136,15 @@ namespace SETUE.Systems
                     Layer = panel.Layer,
                     Alpha = panel.Alpha,
                     Clickable = panel.Clickable,
-                    TextId = panel.Text
+                    TextId = panel.TextId
                 });
                 world.AddComponent(e, new MaterialComponent
                 {
-                    PipelineId = "rect_pipeline",
+                    PipelineId = StringRegistry.GetOrAdd("rect_pipeline"),
                     Color = new Vector4(panel.R, panel.G, panel.B, panel.Alpha)
                 });
             }
 
-            _panelDict = _panels.ToDictionary(p => p.Id);
             Console.WriteLine($"[Panels] Loaded {_panels.Count} panels");
         }
 
@@ -143,7 +154,7 @@ namespace SETUE.Systems
             _windowHeight = windowHeight;
         }
 
-        public static void SetPanelProperty(string panelId, string prop, float value)
+        public static void SetPanelProperty(int panelId, string prop, float value)
         {
             if (_panelDict.TryGetValue(panelId, out var panel))
             {

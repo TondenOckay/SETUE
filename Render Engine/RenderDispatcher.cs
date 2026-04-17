@@ -29,7 +29,6 @@ namespace SETUE
                 bool enabled = parts.Length > 1 && parts[1].Trim().ToLower() == "true";
                 if (!enabled) continue;
 
-                // Map command names to actions
                 _commands[name] = name switch
                 {
                     "Begin_Frame" => () => { /* handled in Vulkan */ },
@@ -43,7 +42,6 @@ namespace SETUE
             Console.WriteLine($"[RenderDispatcher] Loaded {_commands.Count} commands");
         }
 
-        // matches RenderPhasesRunner call
         public static void Execute(string commandName, string? pipelineId)
         {
             if (_commands.TryGetValue(commandName, out var action))
@@ -52,7 +50,6 @@ namespace SETUE
             }
         }
 
-        // matches potential direct calls
         public static void Execute(string commandName)
         {
             if (_commands.TryGetValue(commandName, out var action))

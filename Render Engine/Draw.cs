@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Numerics;
 using Silk.NET.Vulkan;
+using SETUE.Core;
 using SETUE.ECS;
 using SETUE.RenderEngine;
 using static SETUE.Vulkan;
@@ -91,9 +92,10 @@ namespace SETUE
                 drawCount3D++;
                 var material = world.GetComponent<MaterialComponent>(e);
 
-                if (!Shaders.All.TryGetValue(material.PipelineId, out var objShader))
+                string pipelineIdStr = StringRegistry.GetString(material.PipelineId);
+                if (!Shaders.All.TryGetValue(pipelineIdStr, out var objShader))
                 {
-                    Console.WriteLine($"[Draw] Pipeline '{material.PipelineId}' not found for entity {e}");
+                    Console.WriteLine($"[Draw] Pipeline '{pipelineIdStr}' not found for entity {e}");
                     continue;
                 }
                 var objPipeline = objShader.Handle;
@@ -136,7 +138,6 @@ namespace SETUE
                 VK.CmdBindVertexBuffers(cmd, 0, 1, vbuf, &offset);
                 VK.CmdBindIndexBuffer(cmd, c.IndexBuffer, 0, IndexType.Uint32);
 
-                // Bind font atlas descriptor set if text
                 if (c.IsText && !string.IsNullOrEmpty(c.FontId))
                 {
                     var font = SETUE.UI.Fonts.Get(c.FontId);

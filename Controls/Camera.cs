@@ -16,8 +16,6 @@ namespace SETUE.Controls
         private static bool  InvertY    = true;
         private static bool  Orthographic = false;
 
-        // Safe non-zero defaults so Normalize() never produces NaN
-        // if CSV columns are missing.
         private static Vector3 ViewFront  = new Vector3( 0,  0, -1);
         private static Vector3 ViewBack   = new Vector3( 0,  0,  1);
         private static Vector3 ViewLeft   = new Vector3(-1,  0,  0);
@@ -43,7 +41,6 @@ namespace SETUE.Controls
             float Get(int idx) => idx >= 0 && idx < values.Length && float.TryParse(values[idx].Trim(), out var f) ? f : 0f;
             bool GetBool(int idx) => idx >= 0 && idx < values.Length && bool.TryParse(values[idx].Trim(), out var b) && b;
 
-            // Returns the vector from CSV if non-zero, otherwise the current default.
             Vector3 SafeGetVec(int baseIdx, Vector3 fallback)
             {
                 if (baseIdx < 0 || baseIdx + 2 >= values.Length) return fallback;
@@ -120,7 +117,6 @@ namespace SETUE.Controls
             if (dist < 0.001f) dist = 0.001f;
             Vector3 dir = Vector3.Normalize(pos - pivot);
 
-            // --- View snapping (numpad 1/3/7 and Ctrl variants) ---
             if (Input.IsActionPressed("view_front"))
             {
                 Input.Consume("view_front");
@@ -160,7 +156,6 @@ namespace SETUE.Controls
                 pos = pivot + dir * dist;
             }
 
-            // --- Toggle orthographic (numpad 5) ---
             if (Input.IsActionPressed("toggle_ortho"))
             {
                 Input.Consume("toggle_ortho");
@@ -168,17 +163,12 @@ namespace SETUE.Controls
                 Console.WriteLine($"[Camera] Orthographic: {Orthographic}");
             }
 
-            // --- Ctrl+click: move pivot to midpoint between camera and current
-            // pivot, stepping the orbit centre closer to the scene.
-            // Safe alternative to raycasting — never produces NaN or bad positions.
             if (Input.IsActionPressed("set_pivot"))
             {
                 Input.Consume("set_pivot");
-                // Step the pivot halfway toward the camera, shrinking the orbit
-                // radius. Repeated clicks zoom the orbit centre in progressively.
                 Vector3 newPivot = Vector3.Lerp(pivot, pos, 0.5f);
                 float newDist = Vector3.Distance(pos, newPivot);
-                if (newDist > 0.1f) // don't collapse pivot onto camera
+                if (newDist > 0.1f)
                 {
                     pivot = newPivot;
                     dist  = newDist;
@@ -186,7 +176,6 @@ namespace SETUE.Controls
                 }
             }
 
-            // --- Numpad / arrow key orbit (discrete step) ---
             if (Input.IsActionHeld("rotate_left"))
             {
                 float angle = -OrbitSpeed * 0.1f;
@@ -214,7 +203,6 @@ namespace SETUE.Controls
                 pos = pivot + dir * dist;
             }
 
-            // --- Middle-drag orbit ---
             if (Input.IsActionHeld("camera_orbit"))
             {
                 Vector2 delta = Input.MouseDelta;
@@ -242,7 +230,6 @@ namespace SETUE.Controls
                 }
             }
 
-            // --- Right-drag pan ---
             if (Input.IsActionHeld("camera_pan"))
             {
                 Vector2 delta = Input.MouseDelta;
@@ -262,7 +249,6 @@ namespace SETUE.Controls
                 pivot += pan;
             }
 
-            // --- Scroll zoom ---
             float scroll = Input.ScrollDelta;
             if (MathF.Abs(scroll) > 0.001f)
             {
