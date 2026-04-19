@@ -1,2 +1,13 @@
-panel_id,row_height,padding_x,padding_y,row_r,row_g,row_b,selected_r,selected_g,selected_b,hover_r,hover_g,hover_b,font_id,text_r,text_g,text_b,indent_width
-left_panel,24,8,8,0.18,0.18,0.24,0.3,0.5,0.8,0.22,0.22,0.3,default,1.0,1.0,1.0,12
+parent_type,target,label,submenu,order,panel_id,text_id,color_id,selected_color_id,indent,drag_enabled,rename_enabled,call_script,row_panel_id,row_text_id,row_color_id,row_selected_color_id
+Scene,Parent,,Create,10,,,,,20,true,true,SETUE.UI.SceneTree.CreateChild,scene_tree_row,scene_tree_text,row_default,row_selected
+Scene,Camera,,Create,20,,,,,20,true,true,SETUE.UI.SceneTree.CreateChild,scene_tree_row,scene_tree_text,row_default,row_selected
+Scene,Light,,Create,30,,,,,20,true,true,SETUE.UI.SceneTree.CreateChild,scene_tree_row,scene_tree_text,row_default,row_selected
+Parent,Parent,,Create,10,,,,,20,true,true,SETUE.UI.SceneTree.CreateChild,scene_tree_row,scene_tree_text,row_default,row_selected
+Parent,Terrain,,Create,20,,,,,20,true,true,SETUE.UI.SceneTree.CreateChild,scene_tree_row,scene_tree_text,row_default,row_selected
+Parent,Object,,Create,30,,,,,20,true,true,SETUE.UI.SceneTree.CreateChild,scene_tree_row,scene_tree_text,row_default,row_selected
+Terrain,Walkmesh,,,10,,,,,20,true,true,SETUE.UI.SceneTree.AddWalkmesh,scene_tree_row,scene_tree_text,row_default,row_selected
+Terrain,Textures,,,20,,,,,20,true,true,SETUE.UI.SceneTree.EditTextures,scene_tree_row,scene_tree_text,row_default,row_selected
+Object,Animations,,,10,,,,,20,true,true,SETUE.UI.SceneTree.EditAnimations,scene_tree_row,scene_tree_text,row_default,row_selected
+Object,Textures,,,20,,,,,20,true,true,SETUE.UI.SceneTree.EditTextures,scene_tree_row,scene_tree_text,row_default,row_selected
+ALL,Rename,,,100,,,,,,,,SETUE.UI.SceneTree.StartRename,,,,
+ALL,Delete,,,110,,,,,,,,SETUE.UI.SceneTree.DeleteEntity,,,,

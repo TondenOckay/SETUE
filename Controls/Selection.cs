@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using System.Reflection;
 using SETUE.Core;
 using SETUE.ECS;
+using SETUE.Systems;
 
 namespace SETUE.Controls
 {
@@ -63,13 +65,41 @@ namespace SETUE.Controls
 
                 if (HitTest(world, rule, mouse) && rule.ActionId != 0)
                 {
-                    Action.CreateRequest(rule.ActionId, mouse);
+                    var panel = Panels.GetPanel(rule.ActionId);
+                    if (panel != null && !string.IsNullOrEmpty(panel.CallScript))
+                    {
+                        ExecuteAction(panel.CallScript, rule.ActionId, mouse);
+                    }
 
                     if (rule.ConsumeInput)
                         Input.Consume(rule.InputAction);
                     break;
                 }
             }
+        }
+
+        private static void ExecuteAction(string actionId, int panelId, Vector2 mousePos)
+        {
+            // First, check if it's a movement rule ID (exists in Movement.csv)
+            if (Movement.RuleExists(actionId))
+            {
+                Movement.StartDrag(panelId, mousePos, actionId);
+                return;
+            }
+
+            // Otherwise, treat as a fully qualified method name and invoke via reflection
+            int lastDot = actionId.LastIndexOf('.');
+            if (lastDot <= 0) return;
+            string typeName = actionId[..lastDot];
+            string methodName = actionId[(lastDot + 1)..];
+
+            Type? type = Type.GetType(typeName) ?? Type.GetType("SETUE.Controls." + typeName) ?? Type.GetType("SETUE.UI." + typeName);
+            if (type == null) return;
+
+            MethodInfo? method = type.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static);
+            if (method == null) return;
+
+            method.Invoke(null, new object[] { panelId, mousePos });
         }
 
         private static bool HitTest(World world, SelectionRule rule, Vector2 mouse)

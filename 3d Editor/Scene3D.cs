@@ -44,6 +44,9 @@ namespace SETUE
             Matrix4x4 proj = Matrix4x4.CreatePerspectiveFieldOfView(
                 camera.Fov * MathF.PI / 180f, aspect, camera.Near, camera.Far);
 
+            // Flip Y to match Vulkan NDC (Y-down)
+            proj = Matrix4x4.CreateScale(1, -1, 1) * proj;
+
             int entityCount = 0;
             foreach (var (e, t, m) in world.Query<TransformComponent, MeshComponent>())
             {

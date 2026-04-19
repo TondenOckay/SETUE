@@ -9,7 +9,8 @@ namespace SETUE.Core
     public class SchedulerEntry
     {
         public string ClassName    { get; set; } = "";
-        public string Method       { get; set; } = "";
+        public string LoadMethod   { get; set; } = "";
+        public string UpdateMethod { get; set; } = "";
         public string Loop         { get; set; } = "";
         public string Hub          { get; set; } = "";
         public int    RunOrder     { get; set; }
@@ -23,12 +24,15 @@ namespace SETUE.Core
     {
         private static List<SchedulerEntry> _entries = new();
         private static Dictionary<string, double> _lastRunTimes = new();
-        private static bool _bootRun = false;
+        private static Dictionary<string, Action> _loadActions = new();
+        private static Dictionary<string, Action> _updateActions = new();
 
         public static void Load()
         {
             string path = "Core/Scheduler.csv";
             _entries.Clear();
+            _loadActions.Clear();
+            _updateActions.Clear();
 
             if (!File.Exists(path))
             {
@@ -41,7 +45,8 @@ namespace SETUE.Core
 
             var headers = lines[0].Split(',');
             int idxClass   = Array.IndexOf(headers, "ClassName");
-            int idxMethod  = Array.IndexOf(headers, "Method");
+            int idxLoad    = Array.IndexOf(headers, "LoadMethod");
+            int idxUpdate  = Array.IndexOf(headers, "UpdateMethod");
             int idxLoop    = Array.IndexOf(headers, "Loop");
             int idxHub     = Array.IndexOf(headers, "Hub");
             int idxRun     = Array.IndexOf(headers, "RunOrder");
@@ -58,10 +63,11 @@ namespace SETUE.Core
 
                 string Get(int idx) => idx >= 0 && idx < parts.Length ? parts[idx].Trim() : "";
 
-                _entries.Add(new SchedulerEntry
+                var entry = new SchedulerEntry
                 {
                     ClassName    = Get(idxClass),
-                    Method       = Get(idxMethod),
+                    LoadMethod   = Get(idxLoad),
+                    UpdateMethod = Get(idxUpdate),
                     Loop         = Get(idxLoop),
                     Hub          = Get(idxHub),
                     RunOrder     = int.TryParse(Get(idxRun), out int ro) ? ro : 0,
@@ -69,10 +75,62 @@ namespace SETUE.Core
                     FrequencySec = float.TryParse(Get(idxFreq), out float fs) ? fs : 0f,
                     Enabled      = Get(idxEnabled) == "1",
                     Log          = Get(idxLog) == "1"
-                });
+                };
+
+                if (!entry.Enabled) continue;
+
+                _entries.Add(entry);
+
+                Type? type = Type.GetType(entry.ClassName);
+                if (type == null)
+                {
+                    Console.WriteLine($"[Schedulers] ERROR: Type not found: {entry.ClassName}");
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(entry.LoadMethod))
+                {
+                    var method = type.GetMethod(entry.LoadMethod, BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
+                    if (method != null)
+                    {
+                        try
+                        {
+                            var action = (Action)Delegate.CreateDelegate(typeof(Action), method);
+                            _loadActions[entry.ClassName + "." + entry.LoadMethod] = action;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Schedulers] ERROR creating delegate for {entry.ClassName}.{entry.LoadMethod}: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[Schedulers] ERROR: Load method '{entry.LoadMethod}' not found in {entry.ClassName}");
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(entry.UpdateMethod))
+                {
+                    var method = type.GetMethod(entry.UpdateMethod, BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
+                    if (method != null)
+                    {
+                        try
+                        {
+                            var action = (Action)Delegate.CreateDelegate(typeof(Action), method);
+                            _updateActions[entry.ClassName + "." + entry.UpdateMethod] = action;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Schedulers] ERROR creating delegate for {entry.ClassName}.{entry.UpdateMethod}: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[Schedulers] ERROR: Update method '{entry.UpdateMethod}' not found in {entry.ClassName}");
+                    }
+                }
             }
 
-            // --- VALIDATION ---
             var validation = SchedulerValidator.Validate(_entries);
             if (!validation.IsValid)
             {
@@ -85,36 +143,50 @@ namespace SETUE.Core
             Console.WriteLine($"[Schedulers] Loaded {_entries.Count} systems");
         }
 
-        // Called once by MasterClock on the scheduler thread before the main loop
         public static void RunBoot()
         {
             if (_entries.Count == 0) Load();
 
             var bootEntries = _entries
-                .Where(e => e.Loop == "Boot" && e.Enabled)
+                .Where(e => e.Loop == "Boot" && !string.IsNullOrEmpty(e.LoadMethod))
                 .OrderBy(e => e.TimeSlot)
                 .ThenBy(e => e.Loop)
                 .ThenBy(e => e.Hub)
                 .ThenBy(e => e.RunOrder)
                 .ThenBy(e => e.ClassName);
 
+            Console.WriteLine($"[Schedulers] Running {bootEntries.Count()} boot methods...");
+
             foreach (var entry in bootEntries)
             {
-                if (entry.Log)
-                    Console.WriteLine($"[Scheduler] Boot: {entry.ClassName}.{entry.Method}");
-                InvokeSystem(entry);
-                _lastRunTimes[entry.ClassName + "." + entry.Method] = MasterClock.CurrentTime;
+                string key = entry.ClassName + "." + entry.LoadMethod;
+                Console.WriteLine($"[Schedulers] Boot: attempting {key}");
+                if (_loadActions.TryGetValue(key, out var action))
+                {
+                    if (entry.Log) Console.WriteLine($"[Scheduler] Boot: {key}");
+                    try
+                    {
+                        action();
+                        Console.WriteLine($"[Schedulers] Boot: {key} succeeded.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Schedulers] ERROR in {key}: {ex.InnerException?.Message ?? ex.Message}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[Schedulers] Boot: {key} NOT FOUND in load actions.");
+                }
             }
-            _bootRun = true;
         }
 
-        // Called every tick by MasterClock
         public static void Update(double currentTime)
         {
             if (_entries.Count == 0) Load();
 
             var regularEntries = _entries
-                .Where(e => e.Loop != "Boot" && e.Enabled && !string.IsNullOrEmpty(e.Loop))
+                .Where(e => e.Loop != "Boot" && !string.IsNullOrEmpty(e.UpdateMethod))
                 .OrderBy(e => e.TimeSlot)
                 .ThenBy(e => e.Loop)
                 .ThenBy(e => e.Hub)
@@ -123,46 +195,19 @@ namespace SETUE.Core
 
             foreach (var entry in regularEntries)
             {
-                string key = entry.ClassName + "." + entry.Method;
+                string key = entry.ClassName + "." + entry.UpdateMethod;
                 if (!_lastRunTimes.TryGetValue(key, out double lastRun))
                     lastRun = 0;
 
                 if (entry.FrequencySec > 0 && (currentTime - lastRun) < entry.FrequencySec)
                     continue;
 
-                if (entry.Log)
-                    Console.WriteLine($"[Scheduler] {entry.ClassName}.{entry.Method} (Slot={entry.TimeSlot}, Loop={entry.Loop}, Hub={entry.Hub}, Order={entry.RunOrder})");
-
-                InvokeSystem(entry);
-                _lastRunTimes[key] = currentTime;
-            }
-        }
-
-        private static void InvokeSystem(SchedulerEntry entry)
-        {
-            try
-            {
-                Type? type = Type.GetType(entry.ClassName);
-                if (type == null)
+                if (_updateActions.TryGetValue(key, out var action))
                 {
-                    Console.WriteLine($"[Schedulers] Type not found: {entry.ClassName}");
-                    return;
+                    if (entry.Log) Console.WriteLine($"[Scheduler] {key}");
+                    action();
+                    _lastRunTimes[key] = currentTime;
                 }
-
-                MethodInfo? method = type.GetMethod(entry.Method,
-                    BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
-                if (method == null)
-                {
-                    Console.WriteLine($"[Schedulers] Method {entry.Method} not found in {entry.ClassName}");
-                    return;
-                }
-
-                method.Invoke(null, null);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Schedulers] Error invoking {entry.ClassName}.{entry.Method}: {ex.InnerException?.Message ?? ex.Message}");
-                Console.Out.Flush();
             }
         }
     }

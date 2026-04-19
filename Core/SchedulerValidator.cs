@@ -16,104 +16,84 @@ namespace SETUE.Core
         {
             var result = new ValidationResult();
 
-            // Helper to check if an entry exists and is enabled
-            bool ExistsEnabled(string className, string method)
+            // Required classes (must have at least one enabled entry)
+            var requiredClasses = new[]
             {
-                return entries.Any(e =>
+                "SETUE.Window",
+                "SETUE.Vulkan",
+                "SETUE.RenderEngine.Shaders",
+                "SETUE.Systems.Panels",
+                "SETUE.Controls.Input",
+                "SETUE.Controls.Selection",
+                "SETUE.Scene.Scene2D",
+                "SETUE.UI.SceneTree",
+                "SETUE.Controls.Movement",
+                "SETUE.Scene3D"
+            };
+
+            foreach (var className in requiredClasses)
+            {
+                bool present = entries.Any(e => e.ClassName == className && e.Enabled);
+                if (!present)
+                {
+                    result.IsValid = false;
+                    result.Errors.Add($"Required class missing or disabled: {className}");
+                }
+            }
+
+            // Required specific load methods
+            var requiredLoads = new[]
+            {
+                "SETUE.Vulkan.CreateSurface"
+            };
+
+            foreach (var fullMethod in requiredLoads)
+            {
+                var parts = fullMethod.Split('.');
+                if (parts.Length != 2) continue;
+                string className = parts[0];
+                string methodName = parts[1];
+
+                bool found = entries.Any(e =>
                     e.ClassName == className &&
-                    e.Method == method &&
+                    e.LoadMethod == methodName &&
                     e.Enabled);
+
+                if (!found)
+                {
+                    result.IsValid = false;
+                    result.Errors.Add($"Required load method missing or disabled: {fullMethod}");
+                }
             }
 
-            // Helper to find first enabled entry for a given class/method
-            SchedulerEntry? GetEntry(string className, string method) =>
-                entries.FirstOrDefault(e => e.ClassName == className && e.Method == method && e.Enabled);
-
-            // ------------------------------------------------------------
-            // 1. REQUIRED ENTRIES (must exist and be enabled)
-            // ------------------------------------------------------------
-            var required = new[]
+            // Required specific update methods
+            var requiredUpdates = new[]
             {
-                ("SETUE.Window", "Load"),
-                ("SETUE.Vulkan", "Load"),
-                ("SETUE.Window", "ProcessEvents"),
-                ("SETUE.Vulkan", "DoDrawFrame")
+                "SETUE.Window.ProcessEvents",
+                "SETUE.Vulkan.DoDrawFrame",
+                "SETUE.Controls.Input.Flush",
+                "SETUE.Scene.Scene2D.Update",
+                "SETUE.Controls.Movement.UpdateDrags"
             };
 
-            foreach (var (cls, method) in required)
+            foreach (var fullMethod in requiredUpdates)
             {
-                if (!ExistsEnabled(cls, method))
+                var parts = fullMethod.Split('.');
+                if (parts.Length != 2) continue;
+                string className = parts[0];
+                string methodName = parts[1];
+
+                bool found = entries.Any(e =>
+                    e.ClassName == className &&
+                    e.UpdateMethod == methodName &&
+                    e.Enabled &&
+                    e.Loop != "Boot");
+
+                if (!found)
                 {
                     result.IsValid = false;
-                    result.Errors.Add($"Required entry missing or disabled: {cls}.{method}");
+                    result.Errors.Add($"Required update method missing or disabled: {fullMethod}");
                 }
-            }
-
-            // ------------------------------------------------------------
-            // 2. ORDERING CONSTRAINTS (Method A must run before Method B)
-            // ------------------------------------------------------------
-            var orderingRules = new[]
-            {
-                new { FirstClass = "SETUE.Window", FirstMethod = "Load",
-                      SecondClass = "SETUE.Vulkan", SecondMethod = "Load",
-                      Context = "Window must be loaded before Vulkan" },
-                new { FirstClass = "SETUE.Window", FirstMethod = "ProcessEvents",
-                      SecondClass = "SETUE.Controls.Input", SecondMethod = "Flush",
-                      Context = "ProcessEvents must run before Input.Flush" }
-            };
-
-            foreach (var rule in orderingRules)
-            {
-                var first = GetEntry(rule.FirstClass, rule.FirstMethod);
-                var second = GetEntry(rule.SecondClass, rule.SecondMethod);
-
-                if (first == null || second == null)
-                    continue; // Missing entries already reported
-
-                bool firstBeforeSecond = false;
-                if (first.Loop != second.Loop)
-                    firstBeforeSecond = string.Compare(first.Loop, second.Loop) < 0;
-                else if (Math.Abs(first.TimeSlot - second.TimeSlot) > 0.0001f)
-                    firstBeforeSecond = first.TimeSlot < second.TimeSlot;
-                else
-                    firstBeforeSecond = first.RunOrder < second.RunOrder;
-
-                if (!firstBeforeSecond)
-                {
-                    result.IsValid = false;
-                    result.Errors.Add($"Ordering violation: {rule.FirstClass}.{rule.FirstMethod} must run before {rule.SecondClass}.{rule.SecondMethod} — {rule.Context}");
-                }
-            }
-
-            // ------------------------------------------------------------
-            // 3. CRITICAL BOOT SEQUENCE (within Loop=Boot)
-            // ------------------------------------------------------------
-            var bootEntries = entries
-                .Where(e => e.Loop == "Boot" && e.Enabled)
-                .OrderBy(e => e.TimeSlot)
-                .ThenBy(e => e.RunOrder)
-                .ToList();
-
-            var windowLoadBoot = bootEntries.FirstOrDefault(e => e.ClassName == "SETUE.Window" && e.Method == "Load");
-            var vulkanLoadBoot = bootEntries.FirstOrDefault(e => e.ClassName == "SETUE.Vulkan" && e.Method == "Load");
-
-            if (windowLoadBoot != null && vulkanLoadBoot != null)
-            {
-                if (windowLoadBoot.TimeSlot >= vulkanLoadBoot.TimeSlot)
-                {
-                    result.IsValid = false;
-                    result.Errors.Add("Boot order: Window.Load must have a smaller TimeSlot than Vulkan.Load (run first)");
-                }
-            }
-
-            // ------------------------------------------------------------
-            // 4. DRAW.EXECUTE MUST NOT BE SCHEDULED (it's called inside DoDrawFrame)
-            // ------------------------------------------------------------
-            var drawExecute = entries.FirstOrDefault(e => e.ClassName == "SETUE.Draw" && e.Method == "Execute" && e.Enabled);
-            if (drawExecute != null)
-            {
-                result.IsValid = false;
-                result.Errors.Add("SETUE.Draw.Execute is scheduled but it must be called inside Vulkan.DoDrawFrame. Remove it from Scheduler.csv.");
             }
 
             return result;

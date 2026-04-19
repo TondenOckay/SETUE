@@ -241,14 +241,33 @@ namespace SETUE.RenderEngine
                 }
             };
 
-            var viewport  = new Viewport { X = 0, Y = 0, Width = extent.Width, Height = extent.Height, MinDepth = 0, MaxDepth = 1 };
-            var scissor   = new Rect2D   { Offset = new Offset2D(0, 0), Extent = extent };
+            // Create viewport with flip for 2D pipelines
+            var viewport = new Viewport
+            {
+                X = 0,
+                Y = 0,
+                Width = extent.Width,
+                Height = extent.Height,
+                MinDepth = 0,
+                MaxDepth = 1
+            };
+
+            // Flip Y for 2D pipelines
+            if (entry.Type == "2d")
+            {
+                viewport.Height = -viewport.Height;
+                viewport.Y = extent.Height;
+            }
+
+            var scissor = new Rect2D { Offset = new Offset2D(0, 0), Extent = extent };
 
             var viewportState = new PipelineViewportStateCreateInfo
             {
                 SType = StructureType.PipelineViewportStateCreateInfo,
-                ViewportCount = 1, PViewports = &viewport,
-                ScissorCount  = 1, PScissors  = &scissor
+                ViewportCount = 1,
+                PViewports = &viewport,
+                ScissorCount = 1,
+                PScissors = &scissor
             };
 
             var cullMode = entry.CullMode switch

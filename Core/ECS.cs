@@ -112,7 +112,44 @@ namespace SETUE.ECS
         public float PadTop;
         public float LineHeight;
         public int VAlign;
+        public int StyleId;           // NEW: References Text.csv style row
     }
+
+    // -------------------------------------------------------------------------
+    // Drag Component (NEW)
+    // -------------------------------------------------------------------------
+    public struct DragComponent : IComponent
+    {
+        public int ParentNameId;      // StringRegistry ID of parent panel (for followers)
+        public int MovementId;        // StringRegistry ID of movement rule (e.g., "slide_x")
+        public int MoveEdge;          // StringRegistry ID of edge constraint ("all","left","right","top","bottom")
+        public float MinX;
+        public float MaxX;
+    }
+
+    // -------------------------------------------------------------------------
+    // Scene Hierarchy Components (NEW)
+    // -------------------------------------------------------------------------
+    public struct SceneRootComponent : IComponent { }
+
+    public struct NameComponent : IComponent
+    {
+        public int NameId;            // StringRegistry ID of the entity's name
+    }
+
+    public struct ParentComponent : IComponent
+    {
+        public Entity Parent;         // Parent entity (Entity.Null if none)
+    }
+
+    public struct LightComponent : IComponent
+    {
+        public Vector3 Color;
+        public float Intensity;
+        public int Type;              // 0 = point, 1 = directional, etc.
+    }
+
+    public struct TerrainComponent : IComponent { }
 
     // -------------------------------------------------------------------------
     // Sparse Array Storage
@@ -155,7 +192,6 @@ namespace SETUE.ECS
 
         public void Remove(int entityIndex)
         {
-            // ✅ SAFETY: Only remove if the entity actually has this component
             if (!Has(entityIndex))
                 return;
 
@@ -226,7 +262,6 @@ namespace SETUE.ECS
         {
             _commands.Enqueue(() =>
             {
-                // Verify entity is still valid (generation match)
                 if (e.Index >= _generations.Length || _generations[e.Index] != e.Generation)
                     return;
 

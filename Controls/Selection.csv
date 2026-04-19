@@ -8,9 +8,9 @@ tab_view_toggle,select_object,panel_prefix,tab_view,toggle_tab,true,false,
 xyz_loc_edit,select_object,panel_prefix,item_loc_,edit_value,true,false,
 xyz_rot_edit,select_object,panel_prefix,item_rot_,edit_value,true,false,
 xyz_scale_edit,select_object,panel_prefix,item_scale_,edit_value,true,false,
-menu_file_toggle,select_object,menu_file,,toggle_popup,true,false,
-menu_edit_toggle,select_object,menu_edit,,toggle_popup,true,false,
-menu_tools_toggle,select_object,menu_tools,,toggle_popup,true,false,
+menu_file_toggle,select_object,panel_prefix,header_file,start_drag,true,false,header_file_menu
+menu_edit_toggle,select_object,panel_prefix,header_edit,start_drag,true,false,header_edit_menu
+menu_tools_toggle,select_object,panel_prefix,header_tools,start_drag,true,false,header_tools_menu
 file_new_click,select_object,file_new_panel,,log_message,true,false,
 file_open_click,select_object,file_open_panel,,log_message,true,false,
 file_save_click,select_object,file_save_panel,,log_message,true,false,

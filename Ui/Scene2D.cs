@@ -20,9 +20,13 @@ namespace SETUE.Scene
         public VkBuffer VertexBuffer;
         public VkBuffer IndexBuffer;
         public uint IndexCount;
-        public int Order;
+        public int Layer;
         public bool IsText;
         public string FontId = "";
+
+        // Scissor clipping
+        public bool UseScissor;
+        public Rect2D Scissor; // In screen coordinates (pixels)
     }
 
     public class Scene2DRule
@@ -41,6 +45,9 @@ namespace SETUE.Scene
     {
         private static List<Scene2DRule> _rules = new();
         public static List<DrawCommand2D> Commands { get; private set; } = new();
+
+        // Store panel clip rectangles keyed by panel ID
+        private static Dictionary<int, Rect2D> _panelClipRects = new();
 
         public static void Load()
         {
@@ -93,8 +100,12 @@ namespace SETUE.Scene
             float sw = SwapExtent.Width;
             float sh = SwapExtent.Height;
             Commands.Clear();
+            _panelClipRects.Clear();
 
             var world = Object.ECSWorld;
+
+            // First pass: compute clip rectangles for all panels that act as containers
+            ComputePanelClipRects(world, sw, sh);
 
             foreach (var rule in _rules)
             {
@@ -114,28 +125,35 @@ namespace SETUE.Scene
                             float height = transform.Scale.Y;
 
                             float x = (left / sw) * 2f - 1f;
-                            float y = (top / sh) * 2f - 1f;
+                            float y = 1f - (top / sh) * 2f;
                             float w = (width / sw) * 2f;
                             float h = (height / sh) * 2f;
+
                             float cx = x + w * 0.5f;
-                            float cy = y + h * 0.5f;
+                            float cy = y - h * 0.5f;
 
-                            Matrix4x4 panelTransform = Matrix4x4.CreateScale(w, h, 1f) *
-                                                       Matrix4x4.CreateTranslation(cx, cy, 0f);
+                            Matrix4x4 panelTransform =
+                                Matrix4x4.CreateScale(w, -h, 1f) *
+                                Matrix4x4.CreateTranslation(cx, cy, 0f);
 
-                            string meshId = rule.MeshSource.StartsWith("fixed:") ? rule.MeshSource.Substring(6) : rule.MeshSource;
+                            string meshId = rule.MeshSource.StartsWith("fixed:") ? rule.MeshSource[6..] : rule.MeshSource;
                             if (MeshBuffer.Get(meshId, out var vbuf, out var ibuf, out uint idxCount))
                             {
+                                // Get clip rect for this panel (if it has a parent container)
+                                Rect2D? clipRect = GetClipRectForPanel(world, panel.Id);
+
                                 Commands.Add(new DrawCommand2D
                                 {
                                     Transform = panelTransform,
                                     Color = material.Color,
-                                    PipelineId = StringRegistry.GetString(material.PipelineId), // PipelineId is now int
+                                    PipelineId = StringRegistry.GetString(material.PipelineId),
                                     VertexBuffer = vbuf,
                                     IndexBuffer = ibuf,
                                     IndexCount = idxCount,
-                                    Order = rule.Order,
-                                    IsText = false
+                                    Layer = panel.Layer,
+                                    IsText = false,
+                                    UseScissor = clipRect.HasValue,
+                                    Scissor = clipRect ?? default
                                 });
                             }
                             else
@@ -148,6 +166,19 @@ namespace SETUE.Scene
                     case "texts":
                         foreach (var (e, text, transform) in world.Query<TextComponent, TransformComponent>())
                         {
+                            // Skip text whose parent panel is not visible
+                            if (text.PanelId != 0)
+                            {
+                                bool panelVisible = false;
+                                world.ForEach<PanelComponent>((Entity pe) =>
+                                {
+                                    var p = world.GetComponent<PanelComponent>(pe);
+                                    if (p.Id == text.PanelId && p.Visible)
+                                        panelVisible = true;
+                                });
+                                if (!panelVisible) continue;
+                            }
+
                             string fontIdStr = StringRegistry.GetString(text.FontId);
                             if (string.IsNullOrEmpty(fontIdStr)) fontIdStr = "default";
                             var font = SETUE.UI.Fonts.Get(fontIdStr);
@@ -156,6 +187,9 @@ namespace SETUE.Scene
                             BuildTextBuffers(text, transform, font, sw, sh, out var vbuf, out var ibuf, out uint idxCount);
                             if (idxCount > 0)
                             {
+                                // Text inherits clip rect from its parent panel
+                                Rect2D? clipRect = text.PanelId != 0 ? GetClipRectForPanel(world, text.PanelId) : null;
+
                                 Commands.Add(new DrawCommand2D
                                 {
                                     Transform = Matrix4x4.Identity,
@@ -164,9 +198,11 @@ namespace SETUE.Scene
                                     VertexBuffer = vbuf,
                                     IndexBuffer = ibuf,
                                     IndexCount = idxCount,
-                                    Order = rule.Order + text.Layer,
+                                    Layer = text.Layer,
                                     IsText = true,
-                                    FontId = fontIdStr
+                                    FontId = fontIdStr,
+                                    UseScissor = clipRect.HasValue,
+                                    Scissor = clipRect ?? default
                                 });
                             }
                         }
@@ -174,9 +210,99 @@ namespace SETUE.Scene
                 }
             }
 
-            Commands.Sort((a, b) => a.Order.CompareTo(b.Order));
+            // Sort exclusively by Layer (ascending)
+            Commands.Sort((a, b) => a.Layer.CompareTo(b.Layer));
         }
 
+        // ---------------------------------------------------------------------
+        // Clip Rectangle Management
+        // ---------------------------------------------------------------------
+        private static void ComputePanelClipRects(World world, float screenWidth, float screenHeight)
+        {
+            // Identify container panels that should clip their children.
+            // In this UI, "left_panel", "right_panel", and popups act as containers.
+            // For simplicity, we'll treat any panel with children as a clipping container.
+            // Alternatively, you can hardcode IDs or add a "clip_children" flag to Panel.csv.
+
+            HashSet<int> containerIds = new HashSet<int>();
+            world.ForEach<DragComponent>((Entity e) =>
+            {
+                var drag = world.GetComponent<DragComponent>(e);
+                if (drag.ParentNameId != 0)
+                    containerIds.Add(drag.ParentNameId);
+            });
+
+            // Also include known containers from Panel.csv (left_panel, right_panel, popups)
+            containerIds.Add(StringRegistry.GetOrAdd("left_panel"));
+            containerIds.Add(StringRegistry.GetOrAdd("right_panel"));
+            containerIds.Add(StringRegistry.GetOrAdd("header_file_menu"));
+            containerIds.Add(StringRegistry.GetOrAdd("header_edit_menu"));
+            containerIds.Add(StringRegistry.GetOrAdd("header_tools_menu"));
+
+            foreach (var containerId in containerIds)
+            {
+                world.ForEach<PanelComponent>((Entity e) =>
+                {
+                    var panel = world.GetComponent<PanelComponent>(e);
+                    if (panel.Id == containerId && panel.Visible)
+                    {
+                        var trans = world.GetComponent<TransformComponent>(e);
+                        float left   = trans.Position.X - trans.Scale.X * 0.5f;
+                        float top    = trans.Position.Y - trans.Scale.Y * 0.5f;
+                        float width  = trans.Scale.X;
+                        float height = trans.Scale.Y;
+
+                        // Convert to Vulkan screen coordinates (Y=0 at top, Y=height at bottom)
+                        int scissorX = (int)Math.Max(0, left);
+                        int scissorY = (int)Math.Max(0, top);
+                        int scissorW = (int)Math.Min(width, screenWidth - scissorX);
+                        int scissorH = (int)Math.Min(height, screenHeight - scissorY);
+
+                        if (scissorW > 0 && scissorH > 0)
+                        {
+                            _panelClipRects[containerId] = new Rect2D(
+                                new Offset2D(scissorX, scissorY),
+                                new Extent2D((uint)scissorW, (uint)scissorH));
+                        }
+                    }
+                });
+            }
+        }
+
+        private static Rect2D? GetClipRectForPanel(World world, int panelId)
+        {
+            // If the panel itself is a container, use its own clip rect
+            if (_panelClipRects.TryGetValue(panelId, out var rect))
+                return rect;
+
+            // Otherwise, find the nearest ancestor that has a clip rect
+            // (This requires traversing the DragComponent parent links)
+            int currentId = panelId;
+            HashSet<int> visited = new();
+            while (currentId != 0 && !visited.Contains(currentId))
+            {
+                visited.Add(currentId);
+                if (_panelClipRects.TryGetValue(currentId, out rect))
+                    return rect;
+
+                // Move to parent
+                int parentId = 0;
+                world.ForEach<DragComponent>((Entity e) =>
+                {
+                    var drag = world.GetComponent<DragComponent>(e);
+                    var panel = world.GetComponent<PanelComponent>(e);
+                    if (panel.Id == currentId && drag.ParentNameId != 0)
+                        parentId = drag.ParentNameId;
+                });
+                currentId = parentId;
+            }
+
+            return null;
+        }
+
+        // ---------------------------------------------------------------------
+        // Text Buffer Building (unchanged)
+        // ---------------------------------------------------------------------
         private static void BuildTextBuffers(TextComponent text, TransformComponent transform, SETUE.UI.Font font, float sw, float sh,
             out VkBuffer vbuf, out VkBuffer ibuf, out uint indexCount)
         {
@@ -261,13 +387,13 @@ namespace SETUE.Scene
                 }
 
                 float nx0 = (rx0 / sw) * 2f - 1f;
-                float ny0 = (ry0 / sh) * 2f - 1f;
+                float ny0 = 1f - (ry0 / sh) * 2f;
                 float nx1 = (rx1 / sw) * 2f - 1f;
-                float ny1 = (ry1 / sh) * 2f - 1f;
+                float ny1 = 1f - (ry1 / sh) * 2f;
                 float nx2 = (rx2 / sw) * 2f - 1f;
-                float ny2 = (ry2 / sh) * 2f - 1f;
+                float ny2 = 1f - (ry2 / sh) * 2f;
                 float nx3 = (rx3 / sw) * 2f - 1f;
-                float ny3 = (ry3 / sh) * 2f - 1f;
+                float ny3 = 1f - (ry3 / sh) * 2f;
 
                 verts.AddRange(new[] {
                     nx0, ny0, 0f, glyph.U0, glyph.V0, 0f, 0f, 0f,
