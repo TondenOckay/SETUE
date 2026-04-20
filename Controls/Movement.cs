@@ -93,16 +93,6 @@ namespace SETUE.Controls
 
             var world = Object.ECSWorld;
 
-            Console.WriteLine("[MOVEMENT] All DragComponents in ECS:");
-            world.ForEach<DragComponent>((Entity e) =>
-            {
-                var d = world.GetComponent<DragComponent>(e);
-                string panelName = "?";
-                if (world.HasComponent<PanelComponent>(e))
-                    panelName = StringRegistry.GetString(world.GetComponent<PanelComponent>(e).Id);
-                Console.WriteLine($"[MOVEMENT]   Entity {e}: Panel='{panelName}' ParentNameId={d.ParentNameId} MoveEdge='{StringRegistry.GetString(d.MoveEdge)}'");
-            });
-
             Entity? parentEntity = null;
             world.ForEach<PanelComponent>((Entity e) =>
             {
@@ -190,6 +180,7 @@ namespace SETUE.Controls
                 var parentEntity = kv.Key;
                 var drag = kv.Value;
 
+                // Use !IsActionHeld to detect release instead of IsActionReleased
                 if (!Input.IsActionHeld("select_object"))
                 {
                     toRemove.Add(parentEntity);

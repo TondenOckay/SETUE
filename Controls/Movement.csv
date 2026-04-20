@@ -1,3 +1,6 @@
 id,axis,snap,snap_value,sensitivity
 drag_x,X,false,0,1.0
 drag_y,Y,false,0,1.0
+drag_xy,XY,false,0,1.0
+pivot,None,true,45,0.5
+orbit,None,false,0,0.3

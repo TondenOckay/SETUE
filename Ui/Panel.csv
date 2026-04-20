@@ -1,34 +1,34 @@
 parent_name,object_name,left,right,top,bottom,visible,layer,clickable,alpha,text_id,font_id,color_id,text_color_id,move_edge,min_x,max_x,call_script,clip_children
-,menu_bar,0,1920,0,40,true,20,false,1,,,menu_bar,,,,,,false
-,header_file,0,60,0,40,true,21,true,1,header_file_text,,menu_bar,,,,,,false
-,header_edit,60,120,0,40,true,21,true,1,header_edit_text,,menu_bar,,,,,,false
-,header_tools,120,180,0,40,true,21,true,1,header_tools_text,,menu_bar,,,,,,false
-,nav_bar,0,1920,40,80,true,10,false,1,,,nav_bar,,,,,,false
+,menu_bar,0,1920,0,30,true,20,false,1,,,menu_bar,,,,,,false
+,header_file,0,60,0,30,true,21,true,1,header_file_text,,menu_bar,text_white,,,,,false
+,header_edit,60,120,0,30,true,21,true,1,header_edit_text,,menu_bar,text_white,,,,,false
+,header_tools,120,180,0,30,true,21,true,1,header_tools_text,,menu_bar,text_white,,,,,false
+,nav_bar,0,1920,30,60,true,10,false,1,,,nav_bar,,,,,,false
 ,status_bar,0,1920,1040,1080,true,10,false,1,,,status_bar,,,,,,false
-left_border,left_panel,0,330,80,1020,true,10,false,1,,,left_panel,,right,,,,false
-,left_border,330,356,80,1020,true,11,true,1,,,left_border,,all,50,600,drag_x,false
-right_border,right_panel,1590,1920,80,1020,true,10,false,1,,,right_panel,,left,,,,false
-,right_border,1564,1590,80,1020,true,11,true,1,,,right_border,,all,1200,1800,drag_x,false
-right_border,tab_item,1564,1590,80,120,true,12,true,1,tab_item_text,,nav_bar,,all,,,,false
-right_border,tab_view,1564,1590,120,180,true,12,true,1,tab_view_text,,nav_bar,,all,,,,false
-header_file,header_file_menu,0,60,40,160,false,22,true,1,,,popup,,,,,true,
-header_edit,header_edit_menu,60,120,40,120,false,22,true,1,,,popup,,,,,true,
-header_tools,header_tools_menu,120,180,40,80,false,22,true,1,,,popup,,,,,true,
+left_border,left_panel,0,330,60,1020,true,10,false,1,,,left_panel,,right,,,,false
+,left_border,330,356,60,1020,true,11,true,1,,,left_border,,all,50,600,drag_x,false
+right_border,right_panel,1590,1920,60,1020,true,10,false,1,,,right_panel,,left,,,,false
+,right_border,1564,1590,60,1020,true,11,true,1,,,right_border,,all,1200,1800,drag_x,false
+right_border,tab_item,1564,1590,60,120,true,12,true,1,tab_item_text,,nav_bar,text_white,all,,,,false
+right_border,tab_view,1564,1590,120,180,true,12,true,1,tab_view_text,,nav_bar,text_white,all,,,,false
+header_file,header_file_menu,0,60,30,160,false,22,true,1,,,popup,,,,,true
+header_edit,header_edit_menu,60,120,30,120,false,22,true,1,,,popup,,,,,true
+header_tools,header_tools_menu,120,180,30,80,false,22,true,1,,,popup,,,,,true
 header_file_menu,file_new_panel,0,60,40,80,false,23,true,1,file_new_text,default,popup_item,text_white,,,,SETUE.Systems.Panels.FileNew,false
-header_file_menu,file_open_panel,0,60,80,120,false,23,true,1,file_open_text,default,popup_item,text_white,,,,SETUE.Systems.Panels.FileOpen,false
+header_file_menu,file_open_panel,0,60,80,120,23,true,1,file_open_text,default,popup_item,text_white,,,,SETUE.Systems.Panels.FileOpen,false
 header_file_menu,file_save_panel,0,60,120,160,false,23,true,1,file_save_text,default,popup_item,text_white,,,,SETUE.Systems.Panels.FileSave,false
 header_edit_menu,edit_undo_panel,60,120,40,80,false,23,true,1,edit_undo_text,default,popup_item,text_white,,,,SETUE.Systems.Panels.EditUndo,false
 header_edit_menu,edit_redo_panel,60,120,80,120,false,23,true,1,edit_redo_text,default,popup_item,text_white,,,,SETUE.Systems.Panels.EditRedo,false
 header_tools_menu,tools_options_panel,120,180,40,80,false,23,true,1,tools_options_text,default,popup_item,text_white,,,,SETUE.Systems.Panels.ToolsOptions,false
-# Fixed Scene root panel – always visible at the top of left_panel,,,,,,,,,,,,,,,,,,
+# Fixed Scene root panel
 left_border,_st_Scene,0,330,80,104,true,11,true,1,_st_Scene_text,default,row_default,text_white,right,,,,true
-# Templates for dynamic rows (relative top=0, height=24),,,,,,,,,,,,,,,,,
-left_panel,_st_template_Camera,0,330,0,24,true,11,true,1,_st_template_Camera_text,default,row_default,text_white,right,,,,false
-left_panel,_st_template_Light,0,330,0,24,true,11,true,1,_st_template_Light_text,default,row_default,text_white,right,,,,false
-left_panel,_st_template_Terrain,0,330,0,24,true,11,true,1,_st_template_Terrain_text,default,row_default,text_white,right,,,,false
-left_panel,_st_template_Object,0,330,0,24,true,11,true,1,_st_template_Object_text,default,row_default,text_white,right,,,,false
-left_panel,_st_template_Parent,0,330,0,24,true,11,true,1,_st_template_Parent_text,default,row_default,text_white,right,,,,false
-# Context Menu (hidden),,,,,,,,,,,,,,,,,,
+# Templates for dynamic rows (hidden)
+left_panel,_st_template_Camera,0,330,0,24,false,11,true,1,_st_template_Camera_text,default,row_default,text_white,right,,,,false
+left_panel,_st_template_Light,0,330,0,24,false,11,true,1,_st_template_Light_text,default,row_default,text_white,right,,,,false
+left_panel,_st_template_Terrain,0,330,0,24,false,11,true,1,_st_template_Terrain_text,default,row_default,text_white,right,,,,false
+left_panel,_st_template_Object,0,330,0,24,false,11,true,1,_st_template_Object_text,default,row_default,text_white,right,,,,false
+left_panel,_st_template_Parent,0,330,0,24,false,11,true,1,_st_template_Parent_text,default,row_default,text_white,right,,,,false
+# Context Menu
 ,scene_context_menu,0,150,0,48,false,100,true,1,,,popup,,,,,,true
 scene_context_menu,_st_ctx_rename,0,150,0,24,false,101,true,1,_st_ctx_rename_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.RenameSelected,false
 scene_context_menu,_st_ctx_delete,0,150,24,48,false,101,true,1,_st_ctx_delete_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.DeleteSelected,false

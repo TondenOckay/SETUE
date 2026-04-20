@@ -20,7 +20,7 @@ namespace SETUE.Systems
         public int Layer { get; set; }
         public bool Clickable { get; set; }
         public float Alpha { get; set; } = 1f;
-        public int TextId { get; set; }          // ID of the Text row in Text.csv
+        public int TextId { get; set; }
         public string TextIdString { get; set; } = "";
         public int FontId { get; set; }
         public string FontIdString { get; set; } = "default";
@@ -151,8 +151,6 @@ namespace SETUE.Systems
                     Color = panel.Color
                 });
 
-                // Text is no longer attached directly. It will be created by Text.Load().
-
                 var dragComp = new DragComponent();
 
                 if (!string.IsNullOrEmpty(parentStr))
@@ -186,25 +184,31 @@ namespace SETUE.Systems
 
         public static Panel? GetPanel(int id) => _panelDict.TryGetValue(id, out var p) ? p : null;
 
-        // Action Methods (called via call_script)
         public static void ToggleVisibility(int panelId, Vector2 mousePos)
         {
+            ToggleVisibilityReturnState(panelId, mousePos);
+        }
+
+        public static bool ToggleVisibilityReturnState(int panelId, Vector2 mousePos)
+        {
             var world = Object.ECSWorld;
+            bool newState = false;
             world.ForEach<PanelComponent>((Entity e) =>
             {
                 var p = world.GetComponent<PanelComponent>(e);
                 if (p.Id == panelId)
                 {
                     p.Visible = !p.Visible;
+                    newState = p.Visible;
                     world.SetComponent(e, p);
-                    bool newState = p.Visible;
                     Console.WriteLine($"[Panels] Toggled '{StringRegistry.GetString(panelId)}' to {newState}");
                     SetChildrenVisibility(world, panelId, newState);
                 }
             });
+            return newState;
         }
 
-        private static void SetChildrenVisibility(World world, int parentId, bool visible)
+        public static void SetChildrenVisibility(World world, int parentId, bool visible)
         {
             world.ForEach<PanelComponent>((Entity e) =>
             {
