@@ -1,0 +1,29 @@
+packet_id,packet_name,handler_class,handler_method,data_format,compression_enabled,max_size_bytes,requires_ack,max_retries,retry_interval_sec,max_move_speed,max_damage,max_interaction_range,reject_action,priority,reliable,enabled,log
+# packet_id             = unique byte ID for this packet type (0-255)
+# packet_name           = human readable name for logging
+# handler_class         = fully qualified class that handles this packet
+# handler_method        = static method on that class
+# data_format           = binary or string
+# compression_enabled   = 1 to compress before sending, 0 for raw
+# max_size_bytes        = packets larger than this are rejected
+# requires_ack          = 1 means client must confirm receipt
+# max_retries           = how many times to resend if no ack received
+# retry_interval_sec    = seconds between retry attempts
+# max_move_speed        = max units per second allowed (0 = no validation)
+# max_damage            = max damage value allowed (0 = no validation)
+# max_interaction_range = max range in units for interactions (0 = no validation)
+# reject_action         = what to do on validation failure: ignore / kick / disconnect
+# priority              = lower number fires first (0 = highest priority)
+# reliable              = 1 means packet must arrive in order
+# enabled               = 1 to enable this packet type, 0 to skip
+# log                   = 1 to log this packet type, 0 for silent
+0,Heartbeat,SETUE.Network.Handlers.ServerHandler,HandleHeartbeat,binary,0,4,0,0,0,0,0,0,ignore,0,0,1,0
+1,PlayerMove,SETUE.Network.Handlers.PlayerHandler,HandleMove,binary,0,64,0,0,0,10,0,0,disconnect,1,0,1,0
+2,PlayerAttack,SETUE.Network.Handlers.PlayerHandler,HandleAttack,binary,0,128,1,3,0.5,0,1000,5,kick,2,1,1,0
+3,ChatMessage,SETUE.Network.Handlers.ChatHandler,HandleChat,string,1,512,1,2,1,0,0,0,ignore,5,1,1,0
+4,PlayerLogin,SETUE.Network.Handlers.AuthHandler,HandleLogin,binary,0,256,1,5,2,0,0,0,disconnect,0,1,1,1
+5,PlayerLogout,SETUE.Network.Handlers.AuthHandler,HandleLogout,binary,0,32,1,3,1,0,0,0,ignore,0,1,1,0
+6,InventoryUpdate,SETUE.Network.Handlers.InventoryHandler,HandleUpdate,binary,1,1024,1,3,1,0,0,0,ignore,3,1,1,0
+7,ZoneTransfer,SETUE.Network.Handlers.ZoneHandler,HandleTransfer,binary,0,128,1,5,2,0,0,0,disconnect,1,1,1,1
+8,EntityInteract,SETUE.Network.Handlers.WorldHandler,HandleInteract,binary,0,64,1,2,0.5,0,0,10,kick,2,1,1,0
+9,WorldStateAck,SETUE.Network.Handlers.WorldHandler,HandleStateAck,binary,0,16,0,0,0,0,0,0,ignore,0,0,1,0

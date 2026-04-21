@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -23,8 +24,13 @@ namespace SETUE.Core
     public static class Schedulers
     {
         private static List<SchedulerEntry> _entries = new();
-        private static Dictionary<string, double> _lastRunTimes = new();
-        private static Dictionary<string, Action> _loadActions = new();
+
+        // FIX 1: ConcurrentDictionary makes _lastRunTimes safe when each
+        // Loop runs on its own thread. Reads and writes from different
+        // threads can no longer corrupt the dictionary.
+        private static ConcurrentDictionary<string, double> _lastRunTimes = new();
+
+        private static Dictionary<string, Action> _loadActions   = new();
         private static Dictionary<string, Action> _updateActions = new();
 
         public static void Load()
@@ -43,17 +49,17 @@ namespace SETUE.Core
             var lines = File.ReadAllLines(path);
             if (lines.Length < 2) return;
 
-            var headers = lines[0].Split(',');
-            int idxClass   = Array.IndexOf(headers, "ClassName");
-            int idxLoad    = Array.IndexOf(headers, "LoadMethod");
-            int idxUpdate  = Array.IndexOf(headers, "UpdateMethod");
-            int idxLoop    = Array.IndexOf(headers, "Loop");
-            int idxHub     = Array.IndexOf(headers, "Hub");
-            int idxRun     = Array.IndexOf(headers, "RunOrder");
-            int idxSlot    = Array.IndexOf(headers, "TimeSlot");
-            int idxFreq    = Array.IndexOf(headers, "FrequencySec");
-            int idxEnabled = Array.IndexOf(headers, "Enabled");
-            int idxLog     = Array.IndexOf(headers, "Log");
+            var headers   = lines[0].Split(',');
+            int idxClass  = Array.IndexOf(headers, "ClassName");
+            int idxLoad   = Array.IndexOf(headers, "LoadMethod");
+            int idxUpdate = Array.IndexOf(headers, "UpdateMethod");
+            int idxLoop   = Array.IndexOf(headers, "Loop");
+            int idxHub    = Array.IndexOf(headers, "Hub");
+            int idxRun    = Array.IndexOf(headers, "RunOrder");
+            int idxSlot   = Array.IndexOf(headers, "TimeSlot");
+            int idxFreq   = Array.IndexOf(headers, "FrequencySec");
+            int idxEnabled= Array.IndexOf(headers, "Enabled");
+            int idxLog    = Array.IndexOf(headers, "Log");
 
             for (int i = 1; i < lines.Length; i++)
             {
@@ -70,7 +76,7 @@ namespace SETUE.Core
                     UpdateMethod = Get(idxUpdate),
                     Loop         = Get(idxLoop),
                     Hub          = Get(idxHub),
-                    RunOrder     = int.TryParse(Get(idxRun), out int ro) ? ro : 0,
+                    RunOrder     = int.TryParse(Get(idxRun),  out int   ro) ? ro : 0,
                     TimeSlot     = float.TryParse(Get(idxSlot), out float ts) ? ts : 0f,
                     FrequencySec = float.TryParse(Get(idxFreq), out float fs) ? fs : 0f,
                     Enabled      = Get(idxEnabled) == "1",
@@ -90,7 +96,8 @@ namespace SETUE.Core
 
                 if (!string.IsNullOrEmpty(entry.LoadMethod))
                 {
-                    var method = type.GetMethod(entry.LoadMethod, BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
+                    var method = type.GetMethod(entry.LoadMethod,
+                        BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
                     if (method != null)
                     {
                         try
@@ -100,18 +107,21 @@ namespace SETUE.Core
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"[Schedulers] ERROR creating delegate for {entry.ClassName}.{entry.LoadMethod}: {ex.Message}");
+                            Console.WriteLine($"[Schedulers] ERROR creating delegate for " +
+                                $"{entry.ClassName}.{entry.LoadMethod}: {ex.Message}");
                         }
                     }
                     else
                     {
-                        Console.WriteLine($"[Schedulers] ERROR: Load method '{entry.LoadMethod}' not found in {entry.ClassName}");
+                        Console.WriteLine($"[Schedulers] ERROR: Load method '{entry.LoadMethod}' " +
+                            $"not found in {entry.ClassName}");
                     }
                 }
 
                 if (!string.IsNullOrEmpty(entry.UpdateMethod))
                 {
-                    var method = type.GetMethod(entry.UpdateMethod, BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
+                    var method = type.GetMethod(entry.UpdateMethod,
+                        BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic);
                     if (method != null)
                     {
                         try
@@ -121,12 +131,14 @@ namespace SETUE.Core
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"[Schedulers] ERROR creating delegate for {entry.ClassName}.{entry.UpdateMethod}: {ex.Message}");
+                            Console.WriteLine($"[Schedulers] ERROR creating delegate for " +
+                                $"{entry.ClassName}.{entry.UpdateMethod}: {ex.Message}");
                         }
                     }
                     else
                     {
-                        Console.WriteLine($"[Schedulers] ERROR: Update method '{entry.UpdateMethod}' not found in {entry.ClassName}");
+                        Console.WriteLine($"[Schedulers] ERROR: Update method '{entry.UpdateMethod}' " +
+                            $"not found in {entry.ClassName}");
                     }
                 }
             }
@@ -171,7 +183,8 @@ namespace SETUE.Core
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[Schedulers] ERROR in {key}: {ex.InnerException?.Message ?? ex.Message}");
+                        Console.WriteLine($"[Schedulers] ERROR in {key}: " +
+                            $"{ex.InnerException?.Message ?? ex.Message}");
                     }
                 }
                 else
@@ -196,6 +209,8 @@ namespace SETUE.Core
             foreach (var entry in regularEntries)
             {
                 string key = entry.ClassName + "." + entry.UpdateMethod;
+
+                // ConcurrentDictionary.TryGetValue is thread-safe
                 if (!_lastRunTimes.TryGetValue(key, out double lastRun))
                     lastRun = 0;
 
@@ -205,8 +220,21 @@ namespace SETUE.Core
                 if (_updateActions.TryGetValue(key, out var action))
                 {
                     if (entry.Log) Console.WriteLine($"[Scheduler] {key}");
-                    action();
-                    _lastRunTimes[key] = currentTime;
+
+                    // FIX 2: try/catch added to Update so a single broken system
+                    // cannot crash the entire game loop and disconnect all players.
+                    // The error is logged and the loop continues to the next system.
+                    try
+                    {
+                        action();
+                        // ConcurrentDictionary indexer assignment is thread-safe
+                        _lastRunTimes[key] = currentTime;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Schedulers] ERROR in {key}: " +
+                            $"{ex.InnerException?.Message ?? ex.Message}");
+                    }
                 }
             }
         }

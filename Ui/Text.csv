@@ -14,13 +14,16 @@ file_save_text,file_save_panel,Save,default,white,left,top,24,0,,,10,10,20
 edit_undo_text,edit_undo_panel,Undo,default,white,left,top,24,0,,,10,10,20
 edit_redo_text,edit_redo_panel,Redo,default,white,left,top,24,0,,,10,10,20
 tools_options_text,tools_options_panel,Options,default,white,left,top,24,0,,,10,10,20
-# Static scene tree row text,,,,,,,,,,,,,
-_st_Scene_text,_st_Scene,Scene,default,white,left,middle,11,0,,,10,0,24
-_st_template_Camera_text,_st_template_Camera,Camera,default,white,left,middle,11,0,,,10,0,24
-_st_template_Light_text,_st_template_Light,Light,default,white,left,middle,11,0,,,10,0,24
-_st_template_Terrain_text,_st_template_Terrain,Terrain,default,white,left,middle,11,0,,,10,0,24
-_st_template_Object_text,_st_template_Object,Object,default,white,left,middle,11,0,,,10,0,24
-_st_template_Parent_text,_st_template_Parent,Parent,default,white,left,middle,11,0,,,10,0,24
-# Context menu text,,,,,,,,,,,,,
-_st_ctx_rename_text,_st_ctx_rename,Rename,default,white,left,top,101,0,,,10,10,20
-_st_ctx_delete_text,_st_ctx_delete,Delete,default,white,left,top,101,0,,,10,10,20
+_st_Scene_text,_st_Scene,Scene,default,text_white,left,middle,12,0,,,10,0,24
+_st_template_Camera_text,_st_template_Camera,Camera,default,text_white,left,middle,12,0,,,10,0,24
+_st_template_Light_text,_st_template_Light,Light,default,text_white,left,middle,12,0,,,10,0,24
+_st_template_Terrain_text,_st_template_Terrain,Terrain,default,text_white,left,middle,12,0,,,10,0,24
+_st_template_Object_text,_st_template_Object,Object,default,text_white,left,middle,12,0,,,10,0,24
+_st_template_Parent_text,_st_template_Parent,Parent,default,text_white,left,middle,12,0,,,10,0,24
+_st_ctx_rename_text,_st_ctx_rename,Rename,default,text_white,left,top,101,0,,,10,10,20
+_st_ctx_delete_text,_st_ctx_delete,Delete,default,text_white,left,top,101,0,,,10,10,20
+_st_ctx_parent_text,_st_ctx_parent,Parent,default,text_white,left,top,101,0,,,10,10,20
+_st_ctx_camera_text,_st_ctx_camera,Camera,default,text_white,left,top,101,0,,,10,10,20
+_st_ctx_light_text,_st_ctx_light,Light,default,text_white,left,top,101,0,,,10,10,20
+_st_ctx_terrain_text,_st_ctx_terrain,Terrain,default,text_white,left,top,101,0,,,10,10,20
+_st_ctx_object_text,_st_ctx_object,Object,default,text_white,left,top,101,0,,,10,10,20

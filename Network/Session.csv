@@ -1,0 +1,9 @@
+session_id,max_idle_sec,reconnect_window_sec,max_packets_per_sec,max_packet_size_bytes,enabled,log
+# session_id            = policy name. "default" is applied to all new connections automatically
+# max_idle_sec          = seconds of no activity before session is flagged for cleanup
+# reconnect_window_sec  = seconds a disconnected player has to reconnect and restore session
+# max_packets_per_sec   = rate limit — packets above this are dropped (anti-flood)
+# max_packet_size_bytes = any packet larger than this is rejected immediately
+# enabled               = 1 to enable this policy, 0 to skip
+# log                   = 1 to log session events, 0 for silent
+default,300,30,100,4096,1,1

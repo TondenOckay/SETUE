@@ -1,0 +1,14 @@
+server_id,port,max_connections,protocol,connection_timeout_sec,session_timeout_sec,heartbeat_frequency_sec,max_missed_beats,max_sessions,cleanup_frequency_sec,enabled,log
+# server_id        = unique name for this server config
+# port             = port the server listens on
+# max_connections  = max queued incoming connections
+# protocol         = TCP or UDP
+# connection_timeout_sec = seconds before a new connection is dropped if not established
+# session_timeout_sec    = seconds of idle before session is considered dead
+# heartbeat_frequency_sec = how often to ping clients
+# max_missed_beats = how many missed heartbeats before disconnect
+# max_sessions     = hard cap on simultaneous connected players
+# cleanup_frequency_sec  = how often to sweep dead sessions
+# enabled          = 1 to enable this config, 0 to skip
+# log              = 1 to log server events, 0 for silent
+main_server,7777,1000,TCP,30,300,10,3,1000,60,1,1

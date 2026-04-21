@@ -2,6 +2,7 @@ id,input_action,hit_test_type,hit_test_value,on_click_operation,consume_input,ra
 splitter_left,select_object,panel_prefix,left_border,start_drag,true,false,drag_x
 splitter_right,select_object,panel_prefix,right_border,start_drag,true,false,drag_x
 scene_select,select_object,panel_prefix,_st_,select,false,false,
+scene_context,context_menu,panel_prefix,_st_,context_menu,true,false,scene_context_menu
 raycast_select,select_object,viewport,,raycast,true,true,
 tab_item_toggle,select_object,panel_prefix,tab_item,select,true,false,
 tab_view_toggle,select_object,panel_prefix,tab_view,select,true,false,
@@ -17,3 +18,8 @@ file_save_click,select_object,file_save_panel,,,true,false,SETUE.Systems.Panels.
 edit_undo_click,select_object,edit_undo_panel,,,true,false,SETUE.Systems.Panels.EditUndo
 edit_redo_click,select_object,edit_redo_panel,,,true,false,SETUE.Systems.Panels.EditRedo
 tools_options_click,select_object,tools_options_panel,,,true,false,SETUE.Systems.Panels.ToolsOptions
+ctx_rename,select_object,panel_prefix,scene_menu_rename,rename,true,false,
+ctx_delete,select_object,panel_prefix,scene_menu_delete,delete,true,false,
+ctx_parent,select_object,panel_prefix,scene_menu_parent,create,true,false,
+ctx_camera,select_object,panel_prefix,scene_menu_camera,create,true,false,
+ctx_light,select_object,panel_prefix,scene_menu_light,create,true,false,

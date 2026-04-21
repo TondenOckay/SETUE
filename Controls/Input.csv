@@ -2,6 +2,7 @@ action,input,modifier,edit_char,enabled
 camera_orbit,MouseMiddle,,,true
 camera_pan,MouseRight,,,true
 select_object,MouseLeft,,,true
+context_menu,MouseRight,,,true
 set_pivot,MouseLeft,Ctrl,,true
 view_front,Kp1,,,true
 view_back,Kp1,Ctrl,,true

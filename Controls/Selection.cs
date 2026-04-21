@@ -37,8 +37,6 @@ namespace SETUE.Controls
         private const float HOVER_BRIGHTNESS = 1.3f;
         private static readonly Vector4 SELECTED_COLOR = new Vector4(0.3f, 0.5f, 0.8f, 1.0f);
 
-        private static bool _verboseHitTest = true;   // <-- ENABLED FOR DIAGNOSTICS
-
         public static void Load()
         {
             string path = "Controls/Selection.csv";
@@ -139,11 +137,32 @@ namespace SETUE.Controls
                 _hoveredEntity = newHovered;
             }
 
+            // Handle text editing
+            if (Input.IsEditing)
+            {
+                if (Input.EditConfirmed)
+                {
+                    SETUE.UI.SceneTree.OnEditConfirmed();
+                    Input.EndEdit();
+                }
+                else if (Input.EditCancelled)
+                {
+                    SETUE.UI.SceneTree.OnEditCancelled();
+                    Input.EndEdit();
+                }
+            }
+
             // Click handling
-            if (!Input.IsActionPressed("select_object"))
+            string pressedAction = null;
+            if (Input.IsActionPressed("select_object"))
+                pressedAction = "select_object";
+            else if (Input.IsActionPressed("context_menu"))
+                pressedAction = "context_menu";
+
+            if (pressedAction == null)
                 return;
 
-            Console.WriteLine($"[Selection] Left click at ({mouse.X:F0},{mouse.Y:F0})");
+            Console.WriteLine($"[Selection] Action pressed: {pressedAction}, mouse=({mouse.X:F0},{mouse.Y:F0})");
 
             Entity? clickedEntity = null;
             SelectionRule? matchedRule = null;
@@ -151,6 +170,7 @@ namespace SETUE.Controls
 
             foreach (var rule in _rules)
             {
+                if (rule.InputAction != pressedAction) continue;
                 hitPanelId = HitTest(world, rule, mouse);
                 if (hitPanelId != 0)
                 {
@@ -168,6 +188,7 @@ namespace SETUE.Controls
             {
                 Console.WriteLine("[Selection] Clicked empty space.");
                 CloseOpenDropdown(world);
+                SETUE.UI.SceneTree.HideContextMenu(world);
                 ClearSelectedEntity(world);
                 return;
             }
@@ -188,6 +209,27 @@ namespace SETUE.Controls
                 case "select":
                     SetSelectedEntity(world, clickedEntity.Value);
                     CloseOpenDropdown(world);
+                    SETUE.UI.SceneTree.HideContextMenu(world);
+                    handled = true;
+                    break;
+
+                case "context_menu":
+                    SETUE.UI.SceneTree.ShowContextMenu(world, hitPanelId, mouse);
+                    handled = true;
+                    break;
+
+                case "rename":
+                    SETUE.UI.SceneTree.RenameSelected(hitPanelId, mouse);
+                    handled = true;
+                    break;
+
+                case "delete":
+                    SETUE.UI.SceneTree.DeleteSelected(hitPanelId, mouse);
+                    handled = true;
+                    break;
+
+                case "create":
+                    SETUE.UI.SceneTree.CreateChild(hitPanelId, mouse);
                     handled = true;
                     break;
 
@@ -223,6 +265,7 @@ namespace SETUE.Controls
                 {
                     ExecuteMethod(actionName, matchedRule.ActionId, mouse);
                     CloseOpenDropdown(world);
+                    SETUE.UI.SceneTree.HideContextMenu(world);
                 }
                 else if (Movement.RuleExists(actionName))
                 {
@@ -360,16 +403,8 @@ namespace SETUE.Controls
                 float top    = trans.Position.Y - trans.Scale.Y * 0.5f;
                 float bottom = trans.Position.Y + trans.Scale.Y * 0.5f;
 
-                if (_verboseHitTest)
-                {
-                    Console.WriteLine($"[Selection] HitTest rule '{rule.Id}' vs panel '{StringRegistry.GetString(panel.Id)}': bounds=({left:F0},{top:F0})-({right:F0},{bottom:F0}) mouse=({mouse.X:F0},{mouse.Y:F0})");
-                }
-
                 if (mouse.X >= left && mouse.X <= right && mouse.Y >= top && mouse.Y <= bottom)
-                {
-                    if (_verboseHitTest) Console.WriteLine($"[Selection]   -> HIT");
                     return panel.Id;
-                }
             }
             return 0;
         }
