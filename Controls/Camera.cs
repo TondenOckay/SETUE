@@ -10,7 +10,7 @@ namespace SETUE.Controls
     {
         public static float DeltaTime = 0.016f;
 
-        // All values loaded from CSV – no hardcoded fallbacks.
+        // All values loaded from CSV.
         private static float OrbitSpeed;
         private static float PanSpeed;
         private static float ZoomSpeed;
@@ -32,34 +32,62 @@ namespace SETUE.Controls
         {
             string path = "3d Editor/Camera.csv";
             if (!File.Exists(path))
-                throw new FileNotFoundException($"[Camera] ERROR: Required file '{path}' not found.");
+            {
+                Console.WriteLine($"[Camera] ERROR: File not found: '{path}'. Camera not created.");
+                return;
+            }
 
             var lines = File.ReadAllLines(path);
             if (lines.Length < 2)
-                throw new InvalidDataException($"[Camera] ERROR: '{path}' has no data rows.");
+            {
+                Console.WriteLine($"[Camera] ERROR: '{path}' is empty or missing data row. Camera not created.");
+                return;
+            }
 
+            // Build column index map (case-insensitive)
             var headers = lines[0].Split(',');
-            var values  = lines[1].Split(',');
+            var colIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < headers.Length; i++)
+                colIndex[headers[i].Trim()] = i;
 
-            int GetIdx(string name) => Array.FindIndex(headers, h => h.Trim().Equals(name, StringComparison.OrdinalIgnoreCase));
-            float GetFloat(string name)
+            // Use the first data row (index 1)
+            var parts = lines[1].Split(',');
+
+            // Helper to get value by column name
+            string GetStr(string col) =>
+                colIndex.TryGetValue(col, out int idx) && idx < parts.Length ? parts[idx].Trim() : "";
+
+            float GetFloat(string col, float defaultValue = 0f)
             {
-                int idx = GetIdx(name);
-                if (idx < 0 || idx >= values.Length)
-                    throw new InvalidDataException($"[Camera] ERROR: Missing column '{name}' in '{path}'.");
-                if (!float.TryParse(values[idx].Trim(), out float result))
-                    throw new InvalidDataException($"[Camera] ERROR: Invalid float value for '{name}' in '{path}'.");
-                return result;
+                string val = GetStr(col);
+                if (string.IsNullOrEmpty(val))
+                {
+                    Console.WriteLine($"[Camera] Warning: Missing column '{col}' or empty value. Using {defaultValue}.");
+                    return defaultValue;
+                }
+                if (float.TryParse(val, out float result))
+                    return result;
+                Console.WriteLine($"[Camera] Warning: Invalid float '{val}' for '{col}'. Using {defaultValue}.");
+                return defaultValue;
             }
-            bool GetBool(string name)
+
+            bool GetBool(string col, bool defaultValue = false)
             {
-                int idx = GetIdx(name);
-                if (idx < 0 || idx >= values.Length)
-                    throw new InvalidDataException($"[Camera] ERROR: Missing column '{name}' in '{path}'.");
-                if (!bool.TryParse(values[idx].Trim(), out bool result))
-                    throw new InvalidDataException($"[Camera] ERROR: Invalid bool value for '{name}' in '{path}'.");
-                return result;
+                string val = GetStr(col);
+                if (string.IsNullOrEmpty(val))
+                {
+                    Console.WriteLine($"[Camera] Warning: Missing column '{col}' or empty value. Using {defaultValue}.");
+                    return defaultValue;
+                }
+                if (bool.TryParse(val, out bool result))
+                    return result;
+                // Also accept "1"/"0" as bool
+                if (val == "1") return true;
+                if (val == "0") return false;
+                Console.WriteLine($"[Camera] Warning: Invalid bool '{val}' for '{col}'. Using {defaultValue}.");
+                return defaultValue;
             }
+
             Vector3 GetVector3(string baseName)
             {
                 return new Vector3(
@@ -68,24 +96,24 @@ namespace SETUE.Controls
                     GetFloat(baseName + "Z"));
             }
 
-            // Camera position and pivot
-            var pos   = GetVector3("Pos");
-            var pivot = GetVector3("Pivot");
-            var fov   = GetFloat("Fov");
-            var near  = GetFloat("Near");
-            var far   = GetFloat("Far");
-            var invX  = GetBool("InvertX");
-            var invY  = GetBool("InvertY");
+            // Read critical values (with warnings but continue)
+            Vector3 pos   = GetVector3("Pos");
+            Vector3 pivot = GetVector3("Pivot");
+            float fov     = GetFloat("Fov", 60f);
+            float near    = GetFloat("Near", 0.1f);
+            float far     = GetFloat("Far", 1000f);
+            bool invX     = GetBool("InvertX", true);
+            bool invY     = GetBool("InvertY", true);
 
             // Control parameters
-            OrbitSpeed            = GetFloat("orbit_speed");
-            PanSpeed              = GetFloat("pan_speed");
-            ZoomSpeed             = GetFloat("zoom_speed");
-            InvertX               = GetBool("invert_x");
-            InvertY               = GetBool("invert_y");
-            KeyRotateSpeed        = GetFloat("key_rotate_speed");
-            MouseOrbitSensitivity = GetFloat("mouse_orbit_sensitivity");
-            MousePanSensitivity   = GetFloat("mouse_pan_sensitivity");
+            OrbitSpeed            = GetFloat("orbit_speed", 0.15f);
+            PanSpeed              = GetFloat("pan_speed", 0.01f);
+            ZoomSpeed             = GetFloat("zoom_speed", 0.5f);
+            InvertX               = GetBool("invert_x", true);
+            InvertY               = GetBool("invert_y", true);
+            KeyRotateSpeed        = GetFloat("key_rotate_speed", 0.1f);
+            MouseOrbitSensitivity = GetFloat("mouse_orbit_sensitivity", 0.005f);
+            MousePanSensitivity   = GetFloat("mouse_pan_sensitivity", 0.01f);
 
             // View directions
             ViewFront  = GetVector3("Front");
@@ -98,6 +126,7 @@ namespace SETUE.Controls
             Console.WriteLine($"[Camera] Loaded: pos=<{pos.X:F2},{pos.Y:F2},{pos.Z:F2}> pivot=<{pivot.X:F2},{pivot.Y:F2},{pivot.Z:F2}> dist={Vector3.Distance(pos, pivot):F2}");
             Console.WriteLine($"[Camera] Controls: orbit={OrbitSpeed} pan={PanSpeed} zoom={ZoomSpeed} keyRot={KeyRotateSpeed} mouseSens=({MouseOrbitSensitivity},{MousePanSensitivity}) invert=({InvertX},{InvertY})");
 
+            // Create or replace camera entity
             var world = Object.ECSWorld;
             Entity? existing = null;
             foreach (var e in world.Query<CameraComponent>())
@@ -235,7 +264,7 @@ namespace SETUE.Controls
                 }
             }
 
-            // ----- Keyboard rotation (always allowed) -----
+            // ----- Keyboard rotation -----
             if (Input.IsActionHeld("rotate_left"))
             {
                 float angle = -KeyRotateSpeed;
