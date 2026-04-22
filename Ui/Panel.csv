@@ -23,15 +23,19 @@ header_tools_menu,tools_options_panel,120,180,40,80,false,23,true,1,tools_option
 # Scene Tree Row Templates (hidden)
 left_panel,_st_template_Camera,0,330,0,24,false,11,true,1,_st_template_Camera_text,default,row_default,text_white,right,,,,false
 left_panel,_st_template_Light,0,330,0,24,false,11,true,1,_st_template_Light_text,default,row_default,text_white,right,,,,false
-left_panel,_st_template_Terrain,0,330,0,24,false,11,true,1,_st_template_Terrain_text,default,row_default,text_white,right,,,,false
+left_panel,_st_template_Terrain,0,330,0,24,11,true,1,_st_template_Terrain_text,default,row_default,text_white,right,,,,false
 left_panel,_st_template_Object,0,330,0,24,false,11,true,1,_st_template_Object_text,default,row_default,text_white,right,,,,false
 left_panel,_st_template_Parent,0,330,0,24,false,11,true,1,_st_template_Parent_text,default,row_default,text_white,right,,,,false
 # Fixed Scene root panel (always visible)
-left_border,_st_Scene,0,330,80,104,true,11,true,1,_st_Scene_text,default,row_default,text_white,right,,,,true
-# Context Menu (static panel, hidden and off-screen by default)
-,scene_context_menu,-200,-50,-200,-80,false,1000,true,1,,,popup,,,,,,false
-scene_context_menu,scene_menu_parent,-200,-50,-200,-176,true,1001,true,1,_st_ctx_parent_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.CreateChild,false
-scene_context_menu,scene_menu_camera,-200,-50,-176,-152,true,1001,true,1,_st_ctx_camera_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.CreateChild,false
-scene_context_menu,scene_menu_light,-200,-50,-152,-128,true,1001,true,1,_st_ctx_light_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.CreateChild,false
-scene_context_menu,scene_menu_rename,-200,-50,-128,-104,true,1001,true,1,_st_ctx_rename_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.RenameSelected,false
-scene_context_menu,scene_menu_delete,-200,-50,-104,-80,true,1001,true,1,_st_ctx_delete_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.DeleteSelected,false
+left_border,_st_Scene,0,330,80,104,true,11,true,1,_st_Scene_text,default,row_default,text_white,right,,,,false
+# Context Menu for Scene – child of _st_Scene, positioned BELOW it (top=24)
+_st_Scene,scene_menu_Scene,0,150,24,144,false,1000,true,1,,,popup,,,,,,false
+scene_menu_Scene,scene_menu_Scene_parent,0,150,0,24,true,1001,true,1,_st_ctx_parent_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.CreateChild,false
+scene_menu_Scene,scene_menu_Scene_camera,0,150,24,48,true,1001,true,1,_st_ctx_camera_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.CreateChild,false
+scene_menu_Scene,scene_menu_Scene_light,0,150,48,72,true,1001,true,1,_st_ctx_light_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.CreateChild,false
+scene_menu_Scene,scene_menu_Scene_rename,0,150,72,96,true,1001,true,1,_st_ctx_rename_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.RenameSelected,false
+scene_menu_Scene,scene_menu_Scene_delete,0,150,96,120,true,1001,true,1,_st_ctx_delete_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.DeleteSelected,false
+# Context Menu for Camera (example)
+,scene_menu_Camera,0,150,0,48,false,1000,true,1,,,popup,,,,,,false
+scene_menu_Camera,scene_menu_Camera_rename,0,150,0,24,true,1001,true,1,_st_ctx_rename_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.RenameSelected,false
+scene_menu_Camera,scene_menu_Camera_delete,0,150,24,48,true,1001,true,1,_st_ctx_delete_text,default,popup_item,text_white,,,,SETUE.UI.SceneTree.DeleteSelected,false

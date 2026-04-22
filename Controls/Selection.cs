@@ -37,6 +37,8 @@ namespace SETUE.Controls
         private const float HOVER_BRIGHTNESS = 1.3f;
         private static readonly Vector4 SELECTED_COLOR = new Vector4(0.3f, 0.5f, 0.8f, 1.0f);
 
+        public static bool IsMouseOverUI { get; private set; }
+
         public static void Load()
         {
             string path = "Controls/Selection.csv";
@@ -74,7 +76,7 @@ namespace SETUE.Controls
                 if (!string.IsNullOrEmpty(rule.InputAction))
                 {
                     _rules.Add(rule);
-                    Console.WriteLine($"[Selection] Loaded rule: {rule.Id} -> {rule.InputAction} (op='{rule.OnClickOperation}', action='{Get(G("action_id"))}')");
+                    Console.WriteLine($"[Selection] Loaded rule: {rule.Id} -> {rule.InputAction} (type='{rule.HitTestType}', val='{rule.HitTestValue}', op='{rule.OnClickOperation}')");
                 }
             }
             Console.WriteLine($"[Selection] Loaded {_rules.Count} rules");
@@ -85,8 +87,8 @@ namespace SETUE.Controls
             var world = Object.ECSWorld;
             Vector2 mouse = Input.MousePos;
 
-            // Hover detection (only for panels with text)
-            Entity? newHovered = null;
+            // ===== HOVER DETECTION (respect layer order) =====
+            var candidates = new List<(Entity entity, TransformComponent trans, PanelComponent panel)>();
             foreach (var e in world.Query<TransformComponent>())
             {
                 if (!world.HasComponent<PanelComponent>(e)) continue;
@@ -95,6 +97,14 @@ namespace SETUE.Controls
                 if (panel.TextId == 0) continue;
 
                 var trans = world.GetComponent<TransformComponent>(e);
+                candidates.Add((e, trans, panel));
+            }
+
+            candidates.Sort((a, b) => b.panel.Layer.CompareTo(a.panel.Layer));
+
+            Entity? newHovered = null;
+            foreach (var (e, trans, panel) in candidates)
+            {
                 float left   = trans.Position.X - trans.Scale.X * 0.5f;
                 float right  = trans.Position.X + trans.Scale.X * 0.5f;
                 float top    = trans.Position.Y - trans.Scale.Y * 0.5f;
@@ -107,6 +117,9 @@ namespace SETUE.Controls
                 }
             }
 
+            IsMouseOverUI = newHovered.HasValue;
+
+            // Update hover highlighting
             if (newHovered != _hoveredEntity)
             {
                 if (_hoveredEntity.HasValue && _hoverColorStored)
@@ -152,7 +165,7 @@ namespace SETUE.Controls
                 }
             }
 
-            // Click handling
+            // ===== CLICK HANDLING =====
             string pressedAction = null;
             if (Input.IsActionPressed("select_object"))
                 pressedAction = "select_object";
@@ -164,45 +177,82 @@ namespace SETUE.Controls
 
             Console.WriteLine($"[Selection] Action pressed: {pressedAction}, mouse=({mouse.X:F0},{mouse.Y:F0})");
 
-            Entity? clickedEntity = null;
-            SelectionRule? matchedRule = null;
-            int hitPanelId = 0;
-
+            // Collect all rules that match the pressed action
+            var candidateRules = new List<SelectionRule>();
             foreach (var rule in _rules)
             {
-                if (rule.InputAction != pressedAction) continue;
-                hitPanelId = HitTest(world, rule, mouse);
-                if (hitPanelId != 0)
+                if (rule.InputAction == pressedAction)
+                    candidateRules.Add(rule);
+            }
+
+            if (candidateRules.Count == 0)
+            {
+                Console.WriteLine("[Selection] No rules for this action.");
+                return;
+            }
+
+            // Find the best hit: for each rule, get the topmost panel that satisfies it.
+            // Then among those panels, pick the one with the highest layer.
+            int bestPanelId = 0;
+            SelectionRule? bestRule = null;
+            int bestLayer = int.MinValue;
+
+            foreach (var rule in candidateRules)
+            {
+                int panelId = HitTestTopmost(world, rule, mouse);
+                if (panelId == 0) continue;
+
+                // Get the layer of that panel
+                int layer = int.MinValue;
+                world.ForEach<PanelComponent>((Entity e) =>
                 {
-                    world.ForEach<PanelComponent>((Entity e) =>
-                    {
-                        var p = world.GetComponent<PanelComponent>(e);
-                        if (p.Id == hitPanelId) clickedEntity = e;
-                    });
-                    matchedRule = rule;
-                    break;
+                    var p = world.GetComponent<PanelComponent>(e);
+                    if (p.Id == panelId)
+                        layer = p.Layer;
+                });
+
+                if (layer > bestLayer)
+                {
+                    bestLayer = layer;
+                    bestPanelId = panelId;
+                    bestRule = rule;
                 }
             }
 
-            if (!clickedEntity.HasValue || matchedRule == null)
+            if (bestPanelId == 0 || bestRule == null)
             {
-                Console.WriteLine("[Selection] Clicked empty space.");
+                Console.WriteLine("[Selection] Clicked empty space (no rule matched).");
                 CloseOpenDropdown(world);
                 SETUE.UI.SceneTree.HideContextMenu(world);
                 ClearSelectedEntity(world);
                 return;
             }
 
-            string panelIdStr = StringRegistry.GetString(hitPanelId);
-            string actionName = matchedRule.ActionId != 0 ? StringRegistry.GetString(matchedRule.ActionId) : "";
-            Console.WriteLine($"[Selection] Clicked panel '{panelIdStr}' with op '{matchedRule.OnClickOperation}', action '{actionName}'");
+            // Find the entity for the best panel
+            Entity? clickedEntity = null;
+            world.ForEach<PanelComponent>((Entity e) =>
+            {
+                var p = world.GetComponent<PanelComponent>(e);
+                if (p.Id == bestPanelId) clickedEntity = e;
+            });
+
+            if (!clickedEntity.HasValue)
+                return;
+
+            // Consume input to prevent underlying systems
+            Input.Consume(pressedAction);
+            Console.WriteLine($"[Selection] Consumed input: {pressedAction} (UI panel hit)");
+
+            string panelIdStr = StringRegistry.GetString(bestPanelId);
+            string actionName = bestRule.ActionId != 0 ? StringRegistry.GetString(bestRule.ActionId) : "";
+            Console.WriteLine($"[Selection] Clicked panel '{panelIdStr}' (layer {bestLayer}) with rule '{bestRule.Id}' op='{bestRule.OnClickOperation}', action='{actionName}'");
 
             bool handled = false;
 
-            switch (matchedRule.OnClickOperation.ToLower())
+            switch (bestRule.OnClickOperation.ToLower())
             {
                 case "start_drag":
-                    Movement.StartDrag(hitPanelId, mouse, actionName);
+                    Movement.StartDrag(bestPanelId, mouse, actionName);
                     handled = true;
                     break;
 
@@ -214,48 +264,35 @@ namespace SETUE.Controls
                     break;
 
                 case "context_menu":
-                    SETUE.UI.SceneTree.ShowContextMenu(world, hitPanelId, mouse);
+                    SETUE.UI.SceneTree.ShowContextMenu(world, bestPanelId, mouse);
                     handled = true;
                     break;
 
                 case "rename":
-                    SETUE.UI.SceneTree.RenameSelected(hitPanelId, mouse);
+                    SETUE.UI.SceneTree.RenameSelected(bestPanelId, mouse);
                     handled = true;
                     break;
 
                 case "delete":
-                    SETUE.UI.SceneTree.DeleteSelected(hitPanelId, mouse);
+                    SETUE.UI.SceneTree.DeleteSelected(bestPanelId, mouse);
                     handled = true;
                     break;
 
                 case "create":
-                    SETUE.UI.SceneTree.CreateChild(hitPanelId, mouse);
+                    SETUE.UI.SceneTree.CreateChild(bestPanelId, mouse);
                     handled = true;
                     break;
 
                 case "toggle_visibility":
-                    if (IsDropdownPanel(hitPanelId))
+                    if (IsDropdownPanel(bestPanelId))
                     {
-                        ToggleDropdown(world, hitPanelId);
+                        ToggleDropdown(world, bestPanelId);
                     }
                     else
                     {
-                        Panels.ToggleVisibility(hitPanelId, mouse);
+                        Panels.ToggleVisibility(bestPanelId, mouse);
                     }
                     handled = true;
-                    break;
-
-                case "":
-                    if (!string.IsNullOrEmpty(actionName) && IsDropdownPanel(StringRegistry.GetOrAdd(actionName)))
-                    {
-                        ToggleDropdown(world, StringRegistry.GetOrAdd(actionName));
-                        handled = true;
-                    }
-                    else if (IsDropdownPanel(hitPanelId))
-                    {
-                        ToggleDropdown(world, hitPanelId);
-                        handled = true;
-                    }
                     break;
             }
 
@@ -263,28 +300,36 @@ namespace SETUE.Controls
             {
                 if (actionName.Contains('.'))
                 {
-                    ExecuteMethod(actionName, matchedRule.ActionId, mouse);
+                    ExecuteMethod(actionName, bestRule.ActionId, mouse);
                     CloseOpenDropdown(world);
                     SETUE.UI.SceneTree.HideContextMenu(world);
+                    handled = true;
                 }
                 else if (Movement.RuleExists(actionName))
                 {
-                    Movement.StartDrag(hitPanelId, mouse, actionName);
+                    Movement.StartDrag(bestPanelId, mouse, actionName);
+                    handled = true;
                 }
                 else if (!string.IsNullOrEmpty(actionName))
                 {
                     int targetPanelId = StringRegistry.GetOrAdd(actionName);
                     if (IsDropdownPanel(targetPanelId))
+                    {
                         ToggleDropdown(world, targetPanelId);
+                        handled = true;
+                    }
                     else
+                    {
                         Panels.ToggleVisibility(targetPanelId, mouse);
+                        handled = true;
+                    }
                 }
             }
 
-            if (matchedRule.ConsumeInput)
+            if (!handled && IsDropdownPanel(bestPanelId))
             {
-                Input.Consume(matchedRule.InputAction);
-                Console.WriteLine($"[Selection] Consumed input: {matchedRule.InputAction}");
+                ToggleDropdown(world, bestPanelId);
+                handled = true;
             }
         }
 
@@ -386,9 +431,15 @@ namespace SETUE.Controls
             method?.Invoke(null, new object[] { actionId, mousePos });
         }
 
-        private static int HitTest(World world, SelectionRule rule, Vector2 mouse)
+        /// <summary>
+        /// Returns the panel ID of the topmost (highest layer) panel that satisfies the rule and contains the mouse.
+        /// </summary>
+        private static int HitTestTopmost(World world, SelectionRule rule, Vector2 mouse)
         {
-            if (rule.HitTestType != "panel_prefix") return 0;
+            string hitType = rule.HitTestType;
+            string hitValue = rule.HitTestValue;
+
+            var matches = new List<(Entity e, TransformComponent trans, PanelComponent panel)>();
 
             foreach (var e in world.Query<TransformComponent>())
             {
@@ -396,17 +447,37 @@ namespace SETUE.Controls
                 var trans = world.GetComponent<TransformComponent>(e);
                 var panel = world.GetComponent<PanelComponent>(e);
                 if (!panel.Visible || !panel.Clickable) continue;
-                if (!StringRegistry.GetString(panel.Id).StartsWith(rule.HitTestValue)) continue;
 
                 float left   = trans.Position.X - trans.Scale.X * 0.5f;
                 float right  = trans.Position.X + trans.Scale.X * 0.5f;
                 float top    = trans.Position.Y - trans.Scale.Y * 0.5f;
                 float bottom = trans.Position.Y + trans.Scale.Y * 0.5f;
 
-                if (mouse.X >= left && mouse.X <= right && mouse.Y >= top && mouse.Y <= bottom)
-                    return panel.Id;
+                if (!(mouse.X >= left && mouse.X <= right && mouse.Y >= top && mouse.Y <= bottom))
+                    continue;
+
+                bool matchesRule = false;
+
+                if (hitType == "panel_prefix")
+                {
+                    if (StringRegistry.GetString(panel.Id).StartsWith(hitValue))
+                        matchesRule = true;
+                }
+                else if (!string.IsNullOrEmpty(hitType))
+                {
+                    int targetId = StringRegistry.GetOrAdd(hitType);
+                    if (panel.Id == targetId)
+                        matchesRule = true;
+                }
+
+                if (matchesRule)
+                    matches.Add((e, trans, panel));
             }
-            return 0;
+
+            if (matches.Count == 0) return 0;
+
+            matches.Sort((a, b) => b.panel.Layer.CompareTo(a.panel.Layer));
+            return matches[0].panel.Id;
         }
     }
 }

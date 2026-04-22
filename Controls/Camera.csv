@@ -1,2 +1,2 @@
-id,PosX,PosY,PosZ,PivotX,PivotY,PivotZ,Fov,Near,Far,InvertX,InvertY,orbit_speed,pan_speed,zoom_speed,invert_x,invert_y,FrontX,FrontY,FrontZ,BackX,BackY,BackZ,LeftX,LeftY,LeftZ,RightX,RightY,RightZ,TopX,TopY,TopZ,BottomX,BottomY,BottomZ
-main,0,2,-5,0,0,0,60,0.1,100,False,False,0.4,0.01,0.5,True,True,0,0,1,0,0,-1,-1,0,0,1,0,0,0,1,0,0,-1,0
+id,PosX,PosY,PosZ,PivotX,PivotY,PivotZ,Fov,Near,Far,Iorbit_speed,pan_speed,zoom_speed,invert_x,invert_y,key_rotate_speed,mouse_orbit_sensitivity,mouse_pan_sensitivity
+0.15,0.01,0.5,true,true,0.1,0.005,0.01

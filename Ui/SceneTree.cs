@@ -11,10 +11,14 @@ namespace SETUE.UI
     public static class SceneTree
     {
         private static Dictionary<string, string> _rowTemplateMap = new();
+        private static Dictionary<string, int> _menuTemplateIdMap = new();
+
         private static Entity? _containerEntity;
         private static TransformComponent _containerTransform;
-        private static PanelComponent _containerPanel;
         private static Entity? _sceneRoot;
+        private static int _containerPanelId;
+        private static float _paddingX;
+        private static float _paddingY;
 
         private class RowData
         {
@@ -22,15 +26,13 @@ namespace SETUE.UI
             public Entity TargetEntity;
             public int Depth;
         }
-
         private static readonly Dictionary<Entity, RowData> _rows = new();
-        private static int _containerPanelId;
-        private static float _paddingX = 8f;
-        private static float _paddingY = 4f;
 
+        // Active context menu (reuses template + children)
+        private static Entity? _activeMenuContainer;
+        private static List<Entity> _activeMenuItems = new();
+        private static Dictionary<Entity, Vector3> _originalPositions = new();
         private static Entity? _pendingRenameEntity;
-        private static Entity? _contextMenuEntity;
-        private static int _contextMenuPanelId;
 
         // ---------------------------------------------------------------------
         // Initialization
@@ -39,86 +41,98 @@ namespace SETUE.UI
         {
             Console.WriteLine("[SceneTree] ========== Load() ==========");
             _containerPanelId = StringRegistry.GetOrAdd("left_panel");
-            _contextMenuPanelId = StringRegistry.GetOrAdd("scene_context_menu");
+            LoadSettings("Ui/SceneTree.csv");
             LoadRowTemplates("Ui/SceneTree.csv");
-            HideTemplates();
-            ForceHideContextMenu();
+            BuildMenuTemplateMap();
+            HideAllTemplates();
         }
 
-        private static void LoadRowTemplates(string csvPath)
+        private static void LoadSettings(string path)
         {
-            if (!File.Exists(csvPath))
+            if (!File.Exists(path))
             {
-                Console.WriteLine($"[SceneTree] ERROR: Missing {csvPath}");
+                Console.WriteLine($"[SceneTree] ERROR: Missing {path}");
                 return;
             }
+            var lines = File.ReadAllLines(path);
+            if (lines.Length < 2) return;
 
-            var lines = File.ReadAllLines(csvPath);
+            var headers = lines[0].Split(',');
+            int idxKey = Array.IndexOf(headers, "key");
+            int idxValue = Array.IndexOf(headers, "value");
+
+            if (idxKey < 0 || idxValue < 0) return;
+
+            foreach (var line in lines.Skip(1))
+            {
+                var parts = line.Split(',');
+                if (parts.Length <= Math.Max(idxKey, idxValue)) continue;
+                string key = parts[idxKey].Trim();
+                string val = parts[idxValue].Trim();
+
+                if (key == "padding_x" && float.TryParse(val, out float px))
+                    _paddingX = px;
+                else if (key == "padding_y" && float.TryParse(val, out float py))
+                    _paddingY = py;
+            }
+            Console.WriteLine($"[SceneTree] Padding: X={_paddingX}, Y={_paddingY}");
+        }
+
+        private static void LoadRowTemplates(string path)
+        {
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"[SceneTree] ERROR: Missing {path}");
+                return;
+            }
+            var lines = File.ReadAllLines(path);
             if (lines.Length < 2) return;
 
             var headers = lines[0].Split(',');
             int idxTarget = Array.IndexOf(headers, "target");
-            int idxRowPanelId = Array.IndexOf(headers, "row_panel_id");
+            int idxTemplate = Array.IndexOf(headers, "row_panel_id");
 
             _rowTemplateMap.Clear();
             for (int i = 1; i < lines.Length; i++)
             {
                 var parts = lines[i].Split(',');
-                if (parts.Length <= Math.Max(idxTarget, idxRowPanelId)) continue;
+                if (parts.Length <= Math.Max(idxTarget, idxTemplate)) continue;
                 string target = parts[idxTarget].Trim();
-                string templateId = parts[idxRowPanelId].Trim();
-                if (!string.IsNullOrEmpty(target) && !string.IsNullOrEmpty(templateId))
+                string template = parts[idxTemplate].Trim();
+                if (!string.IsNullOrEmpty(target) && !string.IsNullOrEmpty(template))
                 {
-                    _rowTemplateMap[target] = templateId;
-                    Console.WriteLine($"[SceneTree] Row template: {target} -> {templateId}");
+                    _rowTemplateMap[target] = template;
+                    Console.WriteLine($"[SceneTree] Row template: {target} -> {template}");
                 }
             }
             Console.WriteLine($"[SceneTree] Loaded {_rowTemplateMap.Count} row templates.");
         }
 
-        private static void HideTemplates()
+        private static void BuildMenuTemplateMap()
+        {
+            _menuTemplateIdMap["Scene"]   = StringRegistry.GetOrAdd("scene_menu_Scene");
+            _menuTemplateIdMap["Camera"]  = StringRegistry.GetOrAdd("scene_menu_Camera");
+            _menuTemplateIdMap["Light"]   = StringRegistry.GetOrAdd("scene_menu_Light");
+            _menuTemplateIdMap["Terrain"] = StringRegistry.GetOrAdd("scene_menu_Terrain");
+            _menuTemplateIdMap["Object"]  = StringRegistry.GetOrAdd("scene_menu_Object");
+            _menuTemplateIdMap["Parent"]  = StringRegistry.GetOrAdd("scene_menu_Parent");
+        }
+
+        private static void HideAllTemplates()
         {
             var world = Object.ECSWorld;
             world.ForEach<PanelComponent>((Entity e) =>
             {
                 var p = world.GetComponent<PanelComponent>(e);
-                string idStr = StringRegistry.GetString(p.Id);
-                if (idStr.StartsWith("_st_template_"))
+                string id = StringRegistry.GetString(p.Id);
+                if (id.StartsWith("_st_template_") || id.StartsWith("scene_menu_"))
                 {
                     p.Visible = false;
                     world.SetComponent(e, p);
                 }
             });
             world.ExecuteCommands();
-        }
-
-        private static void ForceHideContextMenu()
-        {
-            var world = Object.ECSWorld;
-            Entity? menuEntity = FindPanelById(world, _contextMenuPanelId);
-            if (menuEntity.HasValue)
-            {
-                var menuPanel = world.GetComponent<PanelComponent>(menuEntity.Value);
-                menuPanel.Visible = false;
-                world.SetComponent(menuEntity.Value, menuPanel);
-
-                // Also hide all children
-                world.ForEach<PanelComponent>((Entity e) =>
-                {
-                    var p = world.GetComponent<PanelComponent>(e);
-                    if (world.HasComponent<DragComponent>(e))
-                    {
-                        var d = world.GetComponent<DragComponent>(e);
-                        if (d.ParentNameId == _contextMenuPanelId)
-                        {
-                            p.Visible = false;
-                            world.SetComponent(e, p);
-                        }
-                    }
-                });
-                world.ExecuteCommands();
-                Console.WriteLine("[SceneTree] Context menu and children forced hidden.");
-            }
+            Console.WriteLine("[SceneTree] All templates hidden.");
         }
 
         // ---------------------------------------------------------------------
@@ -141,24 +155,21 @@ namespace SETUE.UI
                 world.HasComponent<PanelComponent>(_containerEntity.Value) &&
                 world.HasComponent<TransformComponent>(_containerEntity.Value))
             {
-                var panel = world.GetComponent<PanelComponent>(_containerEntity.Value);
-                if (panel.Id == _containerPanelId)
+                var p = world.GetComponent<PanelComponent>(_containerEntity.Value);
+                if (p.Id == _containerPanelId)
                 {
                     _containerTransform = world.GetComponent<TransformComponent>(_containerEntity.Value);
-                    _containerPanel = panel;
                     return true;
                 }
             }
-
             _containerEntity = null;
             world.ForEach<PanelComponent>((Entity e) =>
             {
-                var panel = world.GetComponent<PanelComponent>(e);
-                if (panel.Id == _containerPanelId)
+                var p = world.GetComponent<PanelComponent>(e);
+                if (p.Id == _containerPanelId)
                 {
                     _containerEntity = e;
                     _containerTransform = world.GetComponent<TransformComponent>(e);
-                    _containerPanel = panel;
                 }
             });
             return _containerEntity.HasValue;
@@ -176,7 +187,7 @@ namespace SETUE.UI
             {
                 _sceneRoot = world.CreateEntity();
                 world.AddComponent(_sceneRoot.Value, new SceneRootComponent());
-                world.AddComponent(_sceneRoot.Value, new TransformComponent { Position = Vector3.Zero, Scale = Vector3.One, Rotation = Quaternion.Identity });
+                world.AddComponent(_sceneRoot.Value, new TransformComponent { Position = Vector3.Zero, Scale = Vector3.One });
                 world.AddComponent(_sceneRoot.Value, new NameComponent { NameId = StringRegistry.GetOrAdd("Scene") });
                 Console.WriteLine($"[SceneTree] Created Scene root entity {_sceneRoot.Value.Index}.");
             }
@@ -186,20 +197,16 @@ namespace SETUE.UI
         {
             var result = new Dictionary<Entity, int>();
             if (!_sceneRoot.HasValue) return result;
-
-            var queue = new Queue<(Entity entity, int depth)>();
+            var queue = new Queue<(Entity, int)>();
             queue.Enqueue((_sceneRoot.Value, 0));
-
             while (queue.Count > 0)
             {
-                var (current, depth) = queue.Dequeue();
-                result[current] = depth;
-
+                var (cur, depth) = queue.Dequeue();
+                result[cur] = depth;
                 world.ForEach<ParentComponent>((Entity child) =>
                 {
                     var p = world.GetComponent<ParentComponent>(child);
-                    if (p.Parent == current)
-                        queue.Enqueue((child, depth + 1));
+                    if (p.Parent == cur) queue.Enqueue((child, depth + 1));
                 });
             }
             return result;
@@ -207,235 +214,278 @@ namespace SETUE.UI
 
         private static void SyncRows(World world, Dictionary<Entity, int> hierarchy)
         {
-            var toRemove = new List<Entity>();
-            foreach (var kv in _rows)
-                if (!hierarchy.ContainsKey(kv.Key))
-                    toRemove.Add(kv.Key);
+            var toRemove = _rows.Keys.Where(e => !hierarchy.ContainsKey(e)).ToList();
             foreach (var e in toRemove)
             {
                 world.DestroyEntity(_rows[e].PanelEntity);
                 _rows.Remove(e);
             }
-
-            foreach (var (entity, depth) in hierarchy)
+            foreach (var (e, depth) in hierarchy)
             {
-                if (entity == _sceneRoot) continue;
-                if (!_rows.ContainsKey(entity))
-                    CreateRow(world, entity, depth);
+                if (e == _sceneRoot) continue;
+                if (!_rows.ContainsKey(e))
+                    CreateRow(world, e, depth);
             }
         }
 
-        private static void CreateRow(World world, Entity targetEntity, int depth)
+        private static void CreateRow(World world, Entity target, int depth)
         {
-            string entityType = GetEntityTypeName(world, targetEntity);
-            if (!_rowTemplateMap.TryGetValue(entityType, out string? templateId))
-                if (!_rowTemplateMap.TryGetValue("Object", out templateId))
-                    return;
+            string type = GetEntityTypeName(world, target);
+            if (!_rowTemplateMap.TryGetValue(type, out string? tmpl) &&
+                !_rowTemplateMap.TryGetValue("Object", out tmpl))
+            {
+                Console.WriteLine($"[SceneTree] No row template for type '{type}' or 'Object'");
+                return;
+            }
 
-            int templatePanelId = StringRegistry.GetOrAdd(templateId);
-            Entity? templateEntity = FindPanelById(world, templatePanelId);
-            if (!templateEntity.HasValue) return;
+            Entity? template = FindPanelById(world, StringRegistry.GetOrAdd(tmpl));
+            if (!template.HasValue) return;
 
-            Entity rowEntity = ClonePanel(world, templateEntity.Value, targetEntity);
-            if (rowEntity.Index == 0) return;
+            Entity row = ClonePanel(world, template.Value, target);
+            if (row.Index == 0) return;
 
-            var dragComp = world.HasComponent<DragComponent>(rowEntity) ? world.GetComponent<DragComponent>(rowEntity) : new DragComponent();
-            dragComp.ParentNameId = _containerPanelId;
-            world.SetComponent(rowEntity, dragComp);
+            var drag = world.HasComponent<DragComponent>(row) ? world.GetComponent<DragComponent>(row) : new DragComponent();
+            drag.ParentNameId = _containerPanelId;
+            world.SetComponent(row, drag);
 
-            _rows[targetEntity] = new RowData { PanelEntity = rowEntity, TargetEntity = targetEntity, Depth = depth };
+            _rows[target] = new RowData { PanelEntity = row, TargetEntity = target, Depth = depth };
         }
 
-        private static Entity? FindPanelById(World world, int panelId)
+        private static Entity? FindPanelById(World world, int id)
         {
             Entity? found = null;
-            world.ForEach<PanelComponent>((Entity e) => { if (world.GetComponent<PanelComponent>(e).Id == panelId) found = e; });
+            world.ForEach<PanelComponent>((Entity e) => { if (world.GetComponent<PanelComponent>(e).Id == id) found = e; });
             return found;
         }
 
-        private static Entity ClonePanel(World world, Entity template, Entity targetEntity)
+        private static Entity ClonePanel(World world, Entity template, Entity target)
         {
-            var templateTrans = world.GetComponent<TransformComponent>(template);
-            var templatePanel = world.GetComponent<PanelComponent>(template);
-            var templateMat = world.GetComponent<MaterialComponent>(template);
+            var tTrans = world.GetComponent<TransformComponent>(template);
+            var tPanel = world.GetComponent<PanelComponent>(template);
+            var tMat   = world.GetComponent<MaterialComponent>(template);
 
-            float containerWidth = _containerTransform.Scale.X;
-            float rowWidth = containerWidth - _paddingX * 2f;
-            float rowHeight = templateTrans.Scale.Y;
+            float w = _containerTransform.Scale.X - _paddingX * 2f;
+            float h = tTrans.Scale.Y;
 
-            int rowPanelId = StringRegistry.GetOrAdd($"_st_{targetEntity.Index}");
-
-            Entity newEntity = world.CreateEntity();
-            world.AddComponent(newEntity, new TransformComponent { Position = Vector3.Zero, Scale = new Vector3(rowWidth, rowHeight, 1), Rotation = Quaternion.Identity });
-            world.AddComponent(newEntity, new PanelComponent { Id = rowPanelId, Visible = _containerPanel.Visible, Layer = _containerPanel.Layer + 1, Alpha = templatePanel.Alpha, Clickable = templatePanel.Clickable, TextId = templatePanel.TextId, ClipChildren = false });
-            world.AddComponent(newEntity, new MaterialComponent { PipelineId = templateMat.PipelineId, Color = templateMat.Color });
+            int newId = StringRegistry.GetOrAdd($"_st_{target.Index}");
+            Entity e = world.CreateEntity();
+            world.AddComponent(e, new TransformComponent { Position = Vector3.Zero, Scale = new Vector3(w, h, 1) });
+            world.AddComponent(e, new PanelComponent
+            {
+                Id = newId,
+                Visible = true,
+                Layer = tPanel.Layer,
+                Clickable = tPanel.Clickable,
+                TextId = tPanel.TextId,
+                Alpha = tPanel.Alpha,
+                ClipChildren = tPanel.ClipChildren
+            });
+            world.AddComponent(e, new MaterialComponent
+            {
+                PipelineId = tMat.PipelineId,
+                Color = tMat.Color
+            });
 
             if (world.HasComponent<TextComponent>(template))
             {
-                var templateText = world.GetComponent<TextComponent>(template);
-                string displayName = GetDisplayName(targetEntity);
-                int contentId = StringRegistry.GetOrAdd(displayName);
-                world.AddComponent(newEntity, new TextComponent
+                var txt = world.GetComponent<TextComponent>(template);
+                string name = GetDisplayName(target);
+                world.AddComponent(e, new TextComponent
                 {
-                    Id = StringRegistry.GetOrAdd($"_st_txt_{targetEntity.Index}"),
-                    ContentId = contentId,
-                    FontId = templateText.FontId,
-                    FontSize = templateText.FontSize,
-                    Color = templateText.Color,
-                    Align = templateText.Align,
-                    VAlign = templateText.VAlign,
-                    Layer = _containerPanel.Layer + 2,
-                    PanelId = rowPanelId,
-                    PadLeft = templateText.PadLeft,
-                    PadTop = templateText.PadTop,
-                    LineHeight = templateText.LineHeight
+                    Id = StringRegistry.GetOrAdd($"_st_txt_{target.Index}"),
+                    ContentId = StringRegistry.GetOrAdd(name),
+                    FontId = txt.FontId,
+                    FontSize = txt.FontSize,
+                    Color = txt.Color,
+                    Align = txt.Align,
+                    VAlign = txt.VAlign,
+                    Layer = txt.Layer,
+                    PanelId = newId,
+                    PadLeft = txt.PadLeft,
+                    PadTop = txt.PadTop,
+                    LineHeight = txt.LineHeight,
+                    Rotation = txt.Rotation,
+                    Source = txt.Source,
+                    Prefix = txt.Prefix,
+                    StyleId = txt.StyleId
                 });
             }
-            return newEntity;
+            return e;
         }
 
         private static void UpdateRows(World world, Dictionary<Entity, int> hierarchy)
         {
-            float containerLeft = _containerTransform.Position.X - _containerTransform.Scale.X * 0.5f;
-            float containerTop = _containerTransform.Position.Y - _containerTransform.Scale.Y * 0.5f;
-            float containerWidth = _containerTransform.Scale.X;
-            float containerHeight = _containerTransform.Scale.Y;
-
+            float left = _containerTransform.Position.X - _containerTransform.Scale.X * 0.5f;
+            float top  = _containerTransform.Position.Y - _containerTransform.Scale.Y * 0.5f;
             float y = 104 + _paddingY;
-            var orderedEntities = hierarchy.OrderBy(kv => kv.Value).ThenBy(kv => kv.Key.Index).Select(kv => kv.Key).ToList();
 
-            foreach (var entity in orderedEntities)
+            foreach (var e in hierarchy.OrderBy(kv => kv.Value).ThenBy(kv => kv.Key.Index).Select(kv => kv.Key))
             {
-                if (entity == _sceneRoot) continue;
-                if (!_rows.TryGetValue(entity, out var row)) continue;
-
-                var panelTrans = world.GetComponent<TransformComponent>(row.PanelEntity);
-                float rowHeight = panelTrans.Scale.Y;
-                float rowWidth = containerWidth - _paddingX * 2f;
-
-                panelTrans.Position = new Vector3(containerLeft + _paddingX + rowWidth * 0.5f, y + rowHeight * 0.5f, 0f);
-                panelTrans.Scale = new Vector3(rowWidth, rowHeight, 1f);
-                world.SetComponent(row.PanelEntity, panelTrans);
-
-                y += rowHeight;
-                if (y + rowHeight > containerTop + containerHeight - _paddingY) break;
+                if (e == _sceneRoot || !_rows.TryGetValue(e, out var row)) continue;
+                var trans = world.GetComponent<TransformComponent>(row.PanelEntity);
+                float h = trans.Scale.Y;
+                trans.Position = new Vector3(left + _paddingX + (_containerTransform.Scale.X - _paddingX * 2f) * 0.5f, y + h * 0.5f, 0);
+                world.SetComponent(row.PanelEntity, trans);
+                y += h;
+                if (y + h > top + _containerTransform.Scale.Y - _paddingY) break;
             }
         }
 
         private static string GetEntityTypeName(World world, Entity e)
         {
             if (world.HasComponent<SceneRootComponent>(e)) return "Scene";
-            if (world.HasComponent<CameraComponent>(e)) return "Camera";
-            if (world.HasComponent<LightComponent>(e)) return "Light";
-            if (world.HasComponent<TerrainComponent>(e)) return "Terrain";
-            if (world.HasComponent<MeshComponent>(e)) return "Object";
-            if (world.HasComponent<ParentComponent>(e) && !world.HasComponent<MeshComponent>(e)) return "Parent";
+            if (world.HasComponent<CameraComponent>(e))   return "Camera";
+            if (world.HasComponent<LightComponent>(e))    return "Light";
+            if (world.HasComponent<TerrainComponent>(e))  return "Terrain";
+            if (world.HasComponent<MeshComponent>(e))     return "Object";
             return "Object";
         }
 
-        private static string GetDisplayName(Entity entity)
+        private static string GetDisplayName(Entity e)
         {
             var world = Object.ECSWorld;
-            if (world.HasComponent<NameComponent>(entity))
-            {
-                int id = world.GetComponent<NameComponent>(entity).NameId;
-                string name = StringRegistry.GetString(id);
-                if (!string.IsNullOrEmpty(name)) return name;
-            }
-            return $"Entity_{entity.Index}";
-        }
-
-        private static Entity? GetEntityFromPanelId(World world, int panelId)
-        {
-            if (panelId == StringRegistry.GetOrAdd("_st_Scene")) return _sceneRoot;
-            foreach (var kv in _rows)
-            {
-                var panel = world.GetComponent<PanelComponent>(kv.Value.PanelEntity);
-                if (panel.Id == panelId) return kv.Key;
-            }
-            return null;
+            if (world.HasComponent<NameComponent>(e))
+                return StringRegistry.GetString(world.GetComponent<NameComponent>(e).NameId);
+            return $"Entity_{e.Index}";
         }
 
         // ---------------------------------------------------------------------
-        // Context Menu
+        // Context Menu – Reuses template, shifts all parts together
         // ---------------------------------------------------------------------
-        public static void ShowContextMenu(World world, int panelId, Vector2 mousePos)
+        public static void ShowContextMenu(World world, int clickedPanelId, Vector2 mousePos)
         {
-            Entity? clickedPanelEntity = FindPanelById(world, panelId);
-            if (!clickedPanelEntity.HasValue) return;
+            Console.WriteLine($"[SceneTree] ShowContextMenu: clicked={StringRegistry.GetString(clickedPanelId)} mouse=({mousePos.X:F0},{mousePos.Y:F0})");
 
-            Entity? targetEntity = GetEntityFromPanelId(world, panelId);
-            if (!targetEntity.HasValue) return;
+            Entity? target = null;
+            if (clickedPanelId == StringRegistry.GetOrAdd("_st_Scene"))
+                target = _sceneRoot;
+            else
+                foreach (var kv in _rows)
+                    if (world.GetComponent<PanelComponent>(kv.Value.PanelEntity).Id == clickedPanelId)
+                        target = kv.Key;
 
-            _contextMenuEntity = FindPanelById(world, _contextMenuPanelId);
-            if (!_contextMenuEntity.HasValue) return;
+            if (!target.HasValue) return;
 
-            var clickedTrans = world.GetComponent<TransformComponent>(clickedPanelEntity.Value);
-            var menuTrans = world.GetComponent<TransformComponent>(_contextMenuEntity.Value);
-            var menuPanel = world.GetComponent<PanelComponent>(_contextMenuEntity.Value);
+            string type = GetEntityTypeName(world, target.Value);
+            if (!_menuTemplateIdMap.TryGetValue(type, out int templateId)) return;
 
-            // Show children
+            Entity? template = FindPanelById(world, templateId);
+            if (!template.HasValue) return;
+
+            // Hide any currently open menu (restores original positions)
+            HideContextMenu(world);
+
+            // Use the template entity directly
+            _activeMenuContainer = template.Value;
+            int containerPanelId = world.GetComponent<PanelComponent>(_activeMenuContainer.Value).Id;
+
+            // Collect all menu items (children of this container)
+            _activeMenuItems.Clear();
             world.ForEach<PanelComponent>((Entity e) =>
             {
-                var p = world.GetComponent<PanelComponent>(e);
                 if (world.HasComponent<DragComponent>(e))
                 {
-                    var d = world.GetComponent<DragComponent>(e);
-                    if (d.ParentNameId == _contextMenuPanelId)
+                    var drag = world.GetComponent<DragComponent>(e);
+                    if (drag.ParentNameId == containerPanelId)
                     {
-                        p.Visible = true;
-                        world.SetComponent(e, p);
+                        _activeMenuItems.Add(e);
                     }
                 }
             });
 
-            // Position menu
-            float panelLeft = clickedTrans.Position.X - clickedTrans.Scale.X * 0.5f;
-            float panelBottom = clickedTrans.Position.Y + clickedTrans.Scale.Y * 0.5f;
-            float menuWidth = 150f;  // fixed width for context menu
-            float menuHeight = 120f; // 5 items * 24px
-            float menuX = panelLeft;
-            float menuY = panelBottom + 4f;
+            // Store original positions of container and all children
+            _originalPositions.Clear();
+            var containerTrans = world.GetComponent<TransformComponent>(_activeMenuContainer.Value);
+            _originalPositions[_activeMenuContainer.Value] = containerTrans.Position;
+            foreach (var item in _activeMenuItems)
+            {
+                var itemTrans = world.GetComponent<TransformComponent>(item);
+                _originalPositions[item] = itemTrans.Position;
+            }
 
+            // Calculate desired top-left position (mouse + small offset)
+            float menuWidth  = containerTrans.Scale.X;
+            float menuHeight = containerTrans.Scale.Y;
+            float desiredX = mousePos.X + 5f;
+            float desiredY = mousePos.Y + 5f;
+
+            // Clamp to screen
             float sw = Vulkan.SwapExtent.Width;
             float sh = Vulkan.SwapExtent.Height;
-            menuX = Math.Clamp(menuX, 0, sw - menuWidth);
-            menuY = Math.Clamp(menuY, 0, sh - menuHeight);
+            if (desiredX + menuWidth > sw) desiredX = sw - menuWidth;
+            if (desiredY + menuHeight > sh) desiredY = sh - menuHeight;
+            if (desiredX < 0) desiredX = 0;
+            if (desiredY < 0) desiredY = 0;
 
-            menuTrans.Scale = new Vector3(menuWidth, menuHeight, 1);
-            menuTrans.Position = new Vector3(menuX + menuWidth * 0.5f, menuY + menuHeight * 0.5f, 0);
-            world.SetComponent(_contextMenuEntity.Value, menuTrans);
+            // Compute offset from current container top-left to desired top-left
+            float currentLeft = containerTrans.Position.X - menuWidth * 0.5f;
+            float currentTop  = containerTrans.Position.Y - menuHeight * 0.5f;
+            float offsetX = desiredX - currentLeft;
+            float offsetY = desiredY - currentTop;
 
-            menuPanel.Visible = true;
-            world.SetComponent(_contextMenuEntity.Value, menuPanel);
+            // Apply offset to container and all children
+            containerTrans.Position += new Vector3(offsetX, offsetY, 0);
+            world.SetComponent(_activeMenuContainer.Value, containerTrans);
 
-            Console.WriteLine($"[SceneTree] Context menu shown at ({menuX:F0},{menuY:F0})");
+            foreach (var item in _activeMenuItems)
+            {
+                var itemTrans = world.GetComponent<TransformComponent>(item);
+                itemTrans.Position += new Vector3(offsetX, offsetY, 0);
+                world.SetComponent(item, itemTrans);
+            }
+
+            // Make container and children visible
+            var panel = world.GetComponent<PanelComponent>(_activeMenuContainer.Value);
+            panel.Visible = true;
+            world.SetComponent(_activeMenuContainer.Value, panel);
+
+            foreach (var item in _activeMenuItems)
+            {
+                var childPanel = world.GetComponent<PanelComponent>(item);
+                childPanel.Visible = true;
+                world.SetComponent(item, childPanel);
+            }
+
+            world.ExecuteCommands();
+            Console.WriteLine($"[SceneTree] Menu '{StringRegistry.GetString(panel.Id)}' shown at ({desiredX:F0},{desiredY:F0})");
         }
 
         public static void HideContextMenu(World world)
         {
-            if (_contextMenuEntity.HasValue)
+            if (_activeMenuContainer.HasValue)
             {
-                var menuPanel = world.GetComponent<PanelComponent>(_contextMenuEntity.Value);
-                menuPanel.Visible = false;
-                world.SetComponent(_contextMenuEntity.Value, menuPanel);
+                // Restore original positions
+                foreach (var kv in _originalPositions)
+                {
+                    if (world.HasComponent<TransformComponent>(kv.Key))
+                    {
+                        var trans = world.GetComponent<TransformComponent>(kv.Key);
+                        trans.Position = kv.Value;
+                        world.SetComponent(kv.Key, trans);
+                    }
+                }
+
+                // Hide container
+                var panel = world.GetComponent<PanelComponent>(_activeMenuContainer.Value);
+                panel.Visible = false;
+                world.SetComponent(_activeMenuContainer.Value, panel);
 
                 // Hide children
-                world.ForEach<PanelComponent>((Entity e) =>
+                foreach (var item in _activeMenuItems)
                 {
-                    var p = world.GetComponent<PanelComponent>(e);
-                    if (world.HasComponent<DragComponent>(e))
+                    if (world.HasComponent<PanelComponent>(item))
                     {
-                        var d = world.GetComponent<DragComponent>(e);
-                        if (d.ParentNameId == _contextMenuPanelId)
-                        {
-                            p.Visible = false;
-                            world.SetComponent(e, p);
-                        }
+                        var childPanel = world.GetComponent<PanelComponent>(item);
+                        childPanel.Visible = false;
+                        world.SetComponent(item, childPanel);
                     }
-                });
-                _contextMenuEntity = null;
-                Console.WriteLine("[SceneTree] Context menu hidden.");
+                }
+
+                _activeMenuContainer = null;
+                _activeMenuItems.Clear();
+                _originalPositions.Clear();
+                world.ExecuteCommands();
+                Console.WriteLine("[SceneTree] Context menu hidden and original positions restored.");
             }
         }
 
@@ -445,22 +495,28 @@ namespace SETUE.UI
         public static void RenameSelected(int panelId, Vector2 mousePos)
         {
             var world = Object.ECSWorld;
-            Entity? targetEntity = GetEntityFromPanelId(world, panelId);
-            if (!targetEntity.HasValue) return;
-            string currentName = GetDisplayName(targetEntity.Value);
-            SETUE.Controls.Input.StartEdit(currentName, $"Rename {currentName}");
-            _pendingRenameEntity = targetEntity;
+            Entity? target = null;
+            if (panelId == StringRegistry.GetOrAdd("_st_Scene")) target = _sceneRoot;
+            else foreach (var kv in _rows) if (world.GetComponent<PanelComponent>(kv.Value.PanelEntity).Id == panelId) target = kv.Key;
+            if (!target.HasValue) return;
+
+            string curName = GetDisplayName(target.Value);
+            SETUE.Controls.Input.StartEdit(curName, $"Rename {curName}");
+            _pendingRenameEntity = target;
             HideContextMenu(world);
         }
 
         public static void DeleteSelected(int panelId, Vector2 mousePos)
         {
             var world = Object.ECSWorld;
-            Entity? targetEntity = GetEntityFromPanelId(world, panelId);
-            if (!targetEntity.HasValue || targetEntity.Value == _sceneRoot) return;
-            world.DestroyEntity(targetEntity.Value);
+            Entity? target = null;
+            if (panelId == StringRegistry.GetOrAdd("_st_Scene")) target = _sceneRoot;
+            else foreach (var kv in _rows) if (world.GetComponent<PanelComponent>(kv.Value.PanelEntity).Id == panelId) target = kv.Key;
+            if (!target.HasValue || target == _sceneRoot) return;
+
+            world.DestroyEntity(target.Value);
             world.ExecuteCommands();
-            Console.WriteLine($"[SceneTree] Deleted entity {targetEntity.Value.Index}");
+            Console.WriteLine($"[SceneTree] Deleted entity {target.Value.Index}");
             HideContextMenu(world);
         }
 
@@ -483,16 +539,16 @@ namespace SETUE.UI
                 nameComp.NameId = StringRegistry.GetOrAdd(newName);
                 world.SetComponent(_pendingRenameEntity.Value, nameComp);
             }
-            else world.AddComponent(_pendingRenameEntity.Value, new NameComponent { NameId = StringRegistry.GetOrAdd(newName) });
+            else
+            {
+                world.AddComponent(_pendingRenameEntity.Value, new NameComponent { NameId = StringRegistry.GetOrAdd(newName) });
+            }
 
             if (_rows.TryGetValue(_pendingRenameEntity.Value, out var row))
             {
-                var textComp = world.GetComponent<TextComponent>(row.PanelEntity);
-                if (textComp.ContentId != 0)
-                {
-                    textComp.ContentId = StringRegistry.GetOrAdd(newName);
-                    world.SetComponent(row.PanelEntity, textComp);
-                }
+                var txt = world.GetComponent<TextComponent>(row.PanelEntity);
+                txt.ContentId = StringRegistry.GetOrAdd(newName);
+                world.SetComponent(row.PanelEntity, txt);
             }
             _pendingRenameEntity = null;
             Console.WriteLine($"[SceneTree] Renamed to '{newName}'");
